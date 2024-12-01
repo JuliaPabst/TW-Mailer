@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "helpers.h"
 
 #define BUF 1024
 
@@ -80,13 +81,81 @@ int main(int argc, char **argv)
                 buffer[--size] = '\0';
             }
 
-            isQuit = strcmp(buffer, "quit") == 0;
+            // Handle "SEND" command
+            if (strcmp(buffer, "SEND") == 0) {
+                // Send "SEND" command to the server
+                if (send(create_socket, buffer, size + 1, 0) == -1) {
+                    perror("send error");
+                    break;
+                }
+                  printf("I am sending something!");
+                // Collect sender, receiver, subject, and message
+                const char *prompts[] = {"Sender", "Receiver", "Subject", "Message"};
+                for (int i = 0; i < 4; i++) {
+                    printf(">> %s: ", prompts[i]);
+                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                        size = strlen(buffer);
+                        if (buffer[size - 1] == '\n') {
+                            buffer[--size] = '\0'; // Remove newline
+                        }
 
+                        if (send(create_socket, buffer, size + 1, 0) == -1) {
+                            perror("send error");
+                            break;
+                        }
+
+                        // For the message, handle multi-line input
+                        if (i == 3) {
+                            while (1) {
+                                printf(">> ");
+                                if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                                    size = strlen(buffer);
+                                    if (buffer[size - 1] == '\n') {
+                                        buffer[--size] = '\0'; // Remove newline
+                                    }
+
+                                    if (strcmp(buffer, ".") == 0) {
+                                        // Send end of message marker
+                                        if (send(create_socket, buffer, size + 1, 0) == -1) {
+                                            perror("send error");
+                                        }
+                                        break;
+                                    }
+
+                                    if (send(create_socket, buffer, size + 1, 0) == -1) {
+                                        perror("send error");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Receive response from the server
+                size = recv(create_socket, buffer, BUF - 1, 0);
+                if (size == -1) {
+                    perror("recv error");
+                    break;
+                } else if (size == 0) {
+                    printf("Server closed remote socket\n");
+                    break;
+                } else {
+                    buffer[size] = '\0';
+                    printf("<< %s\n", buffer);
+                }
+                continue; // Skip further processing
+            }
+
+            isQuit = strcmp(buffer, "QUIT") == 0;
+
+            // Send other commands to the server
             if (send(create_socket, buffer, size + 1, 0) == -1) {
                 perror("send error");
                 break;
             }
 
+            // Receive response from the server
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (size == -1) {
                 perror("recv error");
@@ -97,10 +166,6 @@ int main(int argc, char **argv)
             } else {
                 buffer[size] = '\0';
                 printf("<< %s\n", buffer);
-                if (strcmp("OK", buffer) != 0) {
-                    fprintf(stderr, "Server error occurred, aborting.\n");
-                    break;
-                }
             }
         }
     } while (!isQuit);

@@ -9,44 +9,34 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <errno.h>
-
-#define BUF 1024
+#include "helpers.h"
 
 int abortRequested = 0;
 int create_socket = -1;
 int new_socket = -1;
 
-void *clientCommunication(void *data);
-void signalHandler(int sig);
-
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     socklen_t addrlen;
     struct sockaddr_in address, cliaddress;
     int reuseValue = 1;
     int port;
     char *mail_spool_dir;
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Check Command-Line Arguments
     if (argc != 3) {
         fprintf(stderr, "Usage: %s <port> <mail-spool-directory>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    // Parse port
     port = atoi(argv[1]);
     if (port <= 0 || port > 65535) {
         fprintf(stderr, "Invalid port number: %s\n", argv[1]);
         return EXIT_FAILURE;
     }
 
-    // Parse mail spool directory
     mail_spool_dir = argv[2];
     struct stat dir_stat;
     if (stat(mail_spool_dir, &dir_stat) == -1) {
         if (errno == ENOENT) {
-            // Directory does not exist; attempt to create it
             if (mkdir(mail_spool_dir, 0755) == -1) {
                 perror("Failed to create mail spool directory");
                 return EXIT_FAILURE;
@@ -60,48 +50,36 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // SIGNAL HANDLER
     if (signal(SIGINT, signalHandler) == SIG_ERR) {
         perror("signal can not be registered");
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // CREATE A SOCKET
     if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("Socket error");
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // SET SOCKET OPTIONS
     if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
         perror("set socket options - reuseAddr");
         return EXIT_FAILURE;
     }
 
-    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEPORT, &reuseValue, sizeof(reuseValue)) == -1) {
+    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
         perror("set socket options - reusePort");
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // INIT ADDRESS
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    ////////////////////////////////////////////////////////////////////////////
-    // ASSIGN AN ADDRESS WITH PORT TO SOCKET
     if (bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("bind error");
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // ALLOW CONNECTION ESTABLISHING
     if (listen(create_socket, 5) == -1) {
         perror("listen error");
         return EXIT_FAILURE;
@@ -125,11 +103,10 @@ int main(int argc, char **argv)
         printf("Client connected from %s:%d...\n",
                inet_ntoa(cliaddress.sin_addr),
                ntohs(cliaddress.sin_port));
-        clientCommunication(&new_socket);
+        clientCommunication(&new_socket, mail_spool_dir);
         new_socket = -1;
     }
 
-    // Cleanup
     if (create_socket != -1) {
         if (shutdown(create_socket, SHUT_RDWR) == -1) {
             perror("shutdown create_socket");
