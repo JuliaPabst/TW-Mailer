@@ -7,271 +7,138 @@
 #include <stdio.h>
 #include <string.h>
 #include <signal.h>
-
-///////////////////////////////////////////////////////////////////////////////
+#include <sys/stat.h>
+#include <errno.h>
 
 #define BUF 1024
-#define PORT 6543
-
-///////////////////////////////////////////////////////////////////////////////
 
 int abortRequested = 0;
 int create_socket = -1;
 int new_socket = -1;
 
-///////////////////////////////////////////////////////////////////////////////
-
 void *clientCommunication(void *data);
 void signalHandler(int sig);
 
-///////////////////////////////////////////////////////////////////////////////
-
-int main(void)
+int main(int argc, char **argv)
 {
-   socklen_t addrlen;
-   struct sockaddr_in address, cliaddress;
-   int reuseValue = 1;
+    socklen_t addrlen;
+    struct sockaddr_in address, cliaddress;
+    int reuseValue = 1;
+    int port;
+    char *mail_spool_dir;
 
-   ////////////////////////////////////////////////////////////////////////////
-   // SIGNAL HANDLER
-   // SIGINT (Interrup: ctrl+c)
-   // https://man7.org/linux/man-pages/man2/signal.2.html
-   if (signal(SIGINT, signalHandler) == SIG_ERR)
-   {
-      perror("signal can not be registered");
-      return EXIT_FAILURE;
-   }
+    ////////////////////////////////////////////////////////////////////////////
+    // Check Command-Line Arguments
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <port> <mail-spool-directory>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // CREATE A SOCKET
-   // https://man7.org/linux/man-pages/man2/socket.2.html
-   // https://man7.org/linux/man-pages/man7/ip.7.html
-   // https://man7.org/linux/man-pages/man7/tcp.7.html
-   // IPv4, TCP (connection oriented), IP (same as client)
-   if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-   {
-      perror("Socket error"); // errno set by socket()
-      return EXIT_FAILURE;
-   }
+    // Parse port
+    port = atoi(argv[1]);
+    if (port <= 0 || port > 65535) {
+        fprintf(stderr, "Invalid port number: %s\n", argv[1]);
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // SET SOCKET OPTIONS
-   // https://man7.org/linux/man-pages/man2/setsockopt.2.html
-   // https://man7.org/linux/man-pages/man7/socket.7.html
-   // socket, level, optname, optvalue, optlen
-   if (setsockopt(create_socket,
-                  SOL_SOCKET,
-                  SO_REUSEADDR,
-                  &reuseValue,
-                  sizeof(reuseValue)) == -1)
-   {
-      perror("set socket options - reuseAddr");
-      return EXIT_FAILURE;
-   }
+    // Parse mail spool directory
+    mail_spool_dir = argv[2];
+    struct stat dir_stat;
+    if (stat(mail_spool_dir, &dir_stat) == -1) {
+        if (errno == ENOENT) {
+            // Directory does not exist; attempt to create it
+            if (mkdir(mail_spool_dir, 0755) == -1) {
+                perror("Failed to create mail spool directory");
+                return EXIT_FAILURE;
+            }
+        } else {
+            perror("Failed to access mail spool directory");
+            return EXIT_FAILURE;
+        }
+    } else if (!S_ISDIR(dir_stat.st_mode)) {
+        fprintf(stderr, "Specified mail spool path is not a directory: %s\n", mail_spool_dir);
+        return EXIT_FAILURE;
+    }
 
-   if (setsockopt(create_socket,
-                  SOL_SOCKET,
-                  SO_REUSEPORT,
-                  &reuseValue,
-                  sizeof(reuseValue)) == -1)
-   {
-      perror("set socket options - reusePort");
-      return EXIT_FAILURE;
-   }
+    ////////////////////////////////////////////////////////////////////////////
+    // SIGNAL HANDLER
+    if (signal(SIGINT, signalHandler) == SIG_ERR) {
+        perror("signal can not be registered");
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // INIT ADDRESS
-   // Attention: network byte order => big endian
-   memset(&address, 0, sizeof(address));
-   address.sin_family = AF_INET;
-   address.sin_addr.s_addr = INADDR_ANY;
-   address.sin_port = htons(PORT);
+    ////////////////////////////////////////////////////////////////////////////
+    // CREATE A SOCKET
+    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("Socket error");
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // ASSIGN AN ADDRESS WITH PORT TO SOCKET
-   if (bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1)
-   {
-      perror("bind error");
-      return EXIT_FAILURE;
-   }
+    ////////////////////////////////////////////////////////////////////////////
+    // SET SOCKET OPTIONS
+    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
+        perror("set socket options - reuseAddr");
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // ALLOW CONNECTION ESTABLISHING
-   // Socket, Backlog (= count of waiting connections allowed)
-   if (listen(create_socket, 5) == -1)
-   {
-      perror("listen error");
-      return EXIT_FAILURE;
-   }
+    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEPORT, &reuseValue, sizeof(reuseValue)) == -1) {
+        perror("set socket options - reusePort");
+        return EXIT_FAILURE;
+    }
 
-   while (!abortRequested)
-   {
-      /////////////////////////////////////////////////////////////////////////
-      // ignore errors here... because only information message
-      // https://linux.die.net/man/3/printf
-      printf("Waiting for connections...\n");
+    ////////////////////////////////////////////////////////////////////////////
+    // INIT ADDRESS
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
 
-      /////////////////////////////////////////////////////////////////////////
-      // ACCEPTS CONNECTION SETUP
-      // blocking, might have an accept-error on ctrl+c
-      addrlen = sizeof(struct sockaddr_in);
-      if ((new_socket = accept(create_socket,
-                               (struct sockaddr *)&cliaddress,
-                               &addrlen)) == -1)
-      {
-         if (abortRequested)
-         {
-            perror("accept error after aborted");
-         }
-         else
-         {
-            perror("accept error");
-         }
-         break;
-      }
+    ////////////////////////////////////////////////////////////////////////////
+    // ASSIGN AN ADDRESS WITH PORT TO SOCKET
+    if (bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
+        perror("bind error");
+        return EXIT_FAILURE;
+    }
 
-      /////////////////////////////////////////////////////////////////////////
-      // START CLIENT
-      // ignore printf error handling
-      printf("Client connected from %s:%d...\n",
-             inet_ntoa(cliaddress.sin_addr),
-             ntohs(cliaddress.sin_port));
-      clientCommunication(&new_socket); // returnValue can be ignored
-      new_socket = -1;
-   }
+    ////////////////////////////////////////////////////////////////////////////
+    // ALLOW CONNECTION ESTABLISHING
+    if (listen(create_socket, 5) == -1) {
+        perror("listen error");
+        return EXIT_FAILURE;
+    }
 
-   // frees the descriptor
-   if (create_socket != -1)
-   {
-      if (shutdown(create_socket, SHUT_RDWR) == -1)
-      {
-         perror("shutdown create_socket");
-      }
-      if (close(create_socket) == -1)
-      {
-         perror("close create_socket");
-      }
-      create_socket = -1;
-   }
+    printf("Server running on port %d, mail spool directory: %s\n", port, mail_spool_dir);
 
-   return EXIT_SUCCESS;
-}
+    while (!abortRequested) {
+        printf("Waiting for connections...\n");
 
-void *clientCommunication(void *data)
-{
-   char buffer[BUF];
-   int size;
-   int *current_socket = (int *)data;
+        addrlen = sizeof(struct sockaddr_in);
+        if ((new_socket = accept(create_socket, (struct sockaddr *)&cliaddress, &addrlen)) == -1) {
+            if (abortRequested) {
+                perror("accept error after aborted");
+            } else {
+                perror("accept error");
+            }
+            break;
+        }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // SEND welcome message
-   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
-   if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
-   {
-      perror("send failed");
-      return NULL;
-   }
+        printf("Client connected from %s:%d...\n",
+               inet_ntoa(cliaddress.sin_addr),
+               ntohs(cliaddress.sin_port));
+        clientCommunication(&new_socket);
+        new_socket = -1;
+    }
 
-   do
-   {
-      /////////////////////////////////////////////////////////////////////////
-      // RECEIVE
-      size = recv(*current_socket, buffer, BUF - 1, 0);
-      if (size == -1)
-      {
-         if (abortRequested)
-         {
-            perror("recv error after aborted");
-         }
-         else
-         {
-            perror("recv error");
-         }
-         break;
-      }
-
-      if (size == 0)
-      {
-         printf("Client closed remote socket\n"); // ignore error
-         break;
-      }
-
-      // remove ugly debug message, because of the sent newline of client
-      if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-      {
-         size -= 2;
-      }
-      else if (buffer[size - 1] == '\n')
-      {
-         --size;
-      }
-
-      buffer[size] = '\0';
-      printf("Message received: %s\n", buffer); // ignore error
-
-      if (send(*current_socket, "OK", 3, 0) == -1)
-      {
-         perror("send answer failed");
-         return NULL;
-      }
-   } while (strcmp(buffer, "quit") != 0 && !abortRequested);
-
-   // closes/frees the descriptor if not already
-   if (*current_socket != -1)
-   {
-      if (shutdown(*current_socket, SHUT_RDWR) == -1)
-      {
-         perror("shutdown new_socket");
-      }
-      if (close(*current_socket) == -1)
-      {
-         perror("close new_socket");
-      }
-      *current_socket = -1;
-   }
-
-   return NULL;
-}
-
-void signalHandler(int sig)
-{
-   if (sig == SIGINT)
-   {
-      printf("abort Requested... "); // ignore error
-      abortRequested = 1;
-      /////////////////////////////////////////////////////////////////////////
-      // With shutdown() one can initiate normal TCP close sequence ignoring
-      // the reference count.
-      // https://beej.us/guide/bgnet/html/#close-and-shutdownget-outta-my-face
-      // https://linux.die.net/man/3/shutdown
-      if (new_socket != -1)
-      {
-         if (shutdown(new_socket, SHUT_RDWR) == -1)
-         {
-            perror("shutdown new_socket");
-         }
-         if (close(new_socket) == -1)
-         {
-            perror("close new_socket");
-         }
-         new_socket = -1;
-      }
-
-      if (create_socket != -1)
-      {
-         if (shutdown(create_socket, SHUT_RDWR) == -1)
-         {
+    // Cleanup
+    if (create_socket != -1) {
+        if (shutdown(create_socket, SHUT_RDWR) == -1) {
             perror("shutdown create_socket");
-         }
-         if (close(create_socket) == -1)
-         {
+        }
+        if (close(create_socket) == -1) {
             perror("close create_socket");
-         }
-         create_socket = -1;
-      }
-   }
-   else
-   {
-      exit(sig);
-   }
+        }
+        create_socket = -1;
+    }
+
+    return EXIT_SUCCESS;
 }
