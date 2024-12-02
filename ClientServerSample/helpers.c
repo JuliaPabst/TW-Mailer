@@ -1,166 +1,185 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <string.h>      
+#include <sys/socket.h>
+#include "helpers.h"
 
-#define BUF 1024
-#define MESSAGE_BUF 4096 // Larger buffer for structured message
+void signalHandler(int sig) {
+    // Suppress unused parameter warning
+    (void)sig;
 
-void sendMessage(int socket, const char *message) {
-    printf("DEBUG: Sending message: '%s'\n", message);
-    if (send(socket, message, strlen(message), 0) == -1) {
-        perror("Error sending message");
-    }
+    printf("Signal received: %d\n", sig);
+    fflush(stdout);
+
+    // Handle cleanup or graceful shutdown
+    exit(0);
 }
 
-int main(int argc, char **argv) {
-    int create_socket;
+
+int readline(int socket, char *buffer, size_t size) {
+    size_t i = 0;
+    char c;
+
+    while (i < size - 1) { // Reserve space for null terminator
+        ssize_t bytes = recv(socket, &c, 1, 0);
+        if (bytes == -1) {
+            perror("recv error");
+            return -1; // Return error
+        } else if (bytes == 0) {
+            // Connection closed by the client
+            if (i == 0) {
+                return -1; // No data read
+            }
+            break;
+        }
+
+        if (c == '\n') {
+            break; // End of line
+        }
+
+        buffer[i++] = c; // Store character in buffer
+    }
+
+    buffer[i] = '\0'; // Null-terminate the string
+    printf("DEBUG: Received line: '%s'\n", buffer); // Add debug statement
+    return (int)i; // Return the number of characters read
+}
+
+
+
+int isValidUsername(const char *username) {
+    if (strlen(username) > 8) return 0;
+    for (size_t i = 0; i < strlen(username); ++i) {
+        if (!isalnum(username[i])) return 0;
+    }
+    return 1;
+}
+
+void handleSendCommand(int client_socket, const char *mail_spool_dir) {
+    char sender[9], receiver[9], subject[81], message[BUF];
     char buffer[BUF];
-    char message[MESSAGE_BUF];
-    struct sockaddr_in address;
-    int size;
+    char inbox_path[256];
+    FILE *inbox_file;
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Check Command-Line Arguments
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <ip> <port>\n", argv[0]);
-        return EXIT_FAILURE;
+    // Read Sender
+    if (readline(client_socket, sender, sizeof(sender)) <= 0 || !isValidUsername(sender)) {
+        printf("DEBUG: Invalid or missing sender received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
     }
 
-    const char *ip = argv[1];
-    int port = atoi(argv[2]);
+    printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
-    if (port <= 0 || port > 65535) {
-        fprintf(stderr, "Invalid port number: %d\n", port);
-        return EXIT_FAILURE;
+    // Read Receiver
+    if (readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)) {
+        printf("DEBUG: Invalid or missing receiver received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
     }
+    printf("DEBUG: Receiver: %s\n", receiver); // Debug receiver
 
-    ////////////////////////////////////////////////////////////////////////////
-    // CREATE A SOCKET
-    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("Socket error");
-        return EXIT_FAILURE;
+    // Read Subject
+    if (readline(client_socket, subject, sizeof(subject)) <= 0 || strlen(subject) > 80) {
+        printf("DEBUG: Invalid or missing subject received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
     }
+    printf("DEBUG: Subject: %s\n", subject); // Debug subject
 
-    ////////////////////////////////////////////////////////////////////////////
-    // INIT ADDRESS
-    memset(&address, 0, sizeof(address));
-    address.sin_family = AF_INET;
-    address.sin_port = htons(port);
+    // Read Message
+    message[0] = '\0'; // Clear the message buffer
+    printf("DEBUG: Starting to read message lines.\n");
 
-    if (inet_aton(ip, &address.sin_addr) == 0) {
-        fprintf(stderr, "Invalid IP address: %s\n", ip);
-        return EXIT_FAILURE;
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // CREATE A CONNECTION
-    if (connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
-        perror("Connection error - no server available");
-        return EXIT_FAILURE;
-    }
-
-    printf("Connection with server (%s:%d) established\n", ip, port);
-
-    ////////////////////////////////////////////////////////////////////////////
-    // RECEIVE WELCOME MESSAGE
-    size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
-        buffer[size] = '\0';
-        printf("%s\n", buffer);
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // MAIN LOOP
     while (1) {
-        printf(">> ");
-        if (fgets(buffer, BUF, stdin) != NULL) {
-            size = strlen(buffer);
+        if (readline(client_socket, buffer, sizeof(buffer)) <= 0) {
+            printf("DEBUG: Error or disconnection while reading message lines.\n");
+            send(client_socket, "ERR\n", 4, 0);
+            return;
+        }
+        printf("DEBUG: Message line received: %s\n", buffer); // Debug message line
+        if (strcmp(buffer, ".") == 0) {
+            printf("DEBUG: End of message detected.\n");
+            break; // End of message
+        }
 
-            // Ensure the input ends with a newline
-            if (buffer[size - 1] == '\n') {
-                buffer[size - 1] = '\0'; // Replace newline with null-terminator
+        if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
+            printf("DEBUG: Message buffer overflow detected.\n");
+            send(client_socket, "ERR\n", 4, 0);
+            return;
+        }
+
+        strcat(message, buffer);
+        strcat(message, "\n");
+    }
+
+    printf("DEBUG: Complete message:\n%s\n", message); // Debug full message
+
+    // Prepare receiver's inbox path
+    snprintf(inbox_path, sizeof(inbox_path), "%s/%s_inbox.txt", mail_spool_dir, receiver);
+    printf("DEBUG: Inbox path: %s\n", inbox_path); // Debug inbox path
+
+    // Append the message to the receiver's inbox
+    inbox_file = fopen(inbox_path, "a");
+    if (!inbox_file) {
+        perror("DEBUG: Error opening inbox file");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+    fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n---\n", sender, receiver, subject, message);
+    fclose(inbox_file);
+    printf("DEBUG: Message written to inbox successfully.\n");
+
+    // Respond with success
+    send(client_socket, "OK\n", 3, 0);
+    printf("DEBUG: Sent 'OK' response to client.\n");
+}
+
+
+
+void *clientCommunication(void *data, const char *mail_spool_dir) {
+    int client_socket = *(int *)data; // Client socket
+    char buffer[BUF];
+    ssize_t size;
+
+    ////////////////////////////////////////////////////////////////////////////
+   // SEND welcome message
+   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
+   if (send(client_socket, buffer, strlen(buffer), 0) == -1)
+   {
+      perror("send failed");
+      return NULL;
+   }
+
+    while (1) {
+        // Receive data from the client
+        size = recv(client_socket, buffer, BUF - 1, 0);
+        if (size <= 0) {
+            if (size == 0) {
+                printf("Client disconnected\n");
+            } else {
+                perror("recv error");
             }
-
-            // Handle "QUIT" command
-            if (strcmp(buffer, "QUIT") == 0) {
-                sendMessage(create_socket, buffer);
-                break;
-            }
-
-            // Handle "SEND" command
-            if (strcmp(buffer, "SEND") == 0) {
-                sendMessage(create_socket, buffer);
-
-                // Collect the entire message in structured format
-                snprintf(message, sizeof(message), "{\n");
-
-                const char *prompts[] = {"Sender", "Receiver", "Subject", "Message"};
-                char field[BUF];
-                for (int i = 0; i < 4; ++i) {
-                    printf(">> %s: ", prompts[i]);
-                    if (fgets(field, BUF, stdin) != NULL) {
-                        size = strlen(field);
-                        if (field[size - 1] == '\n') {
-                            field[size - 1] = '\0'; // Remove newline
-                        }
-
-                        // Handle multi-line message
-                        if (i == 3) {
-                            strcat(message, "  \"Message\": \"");
-                            strcat(message, field);
-                            strcat(message, "\\n");
-                            while (1) {
-                                printf(">> ");
-                                if (fgets(field, BUF, stdin) != NULL) {
-                                    size = strlen(field);
-                                    if (field[size - 1] == '\n') {
-                                        field[size - 1] = '\0'; // Remove newline
-                                    }
-                                    if (strcmp(field, ".") == 0) {
-                                        strcat(message, "\"\n");
-                                        break;
-                                    }
-                                    strcat(message, field);
-                                    strcat(message, "\\n");
-                                }
-                            }
-                        } else {
-                            char temp[BUF];
-                            snprintf(temp, sizeof(temp), "  \"%s\": \"%s\",\n", prompts[i], field);
-                            strcat(message, temp);
-                        }
-                    }
-                }
-
-                strcat(message, "}\n");
-                sendMessage(create_socket, message);
-
-                // Receive server response
-                size = recv(create_socket, buffer, BUF - 1, 0);
-                if (size > 0) {
-                    buffer[size] = '\0';
-                    printf("<< %s\n", buffer);
-                }
-                continue;
-            }
-
-            // Send other commands and process responses
-            sendMessage(create_socket, buffer);
-
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (size > 0) {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer);
-            }
+            break; // Exit on error or client disconnect
+        }
+        buffer[size] = '\0'; // Null-terminate the string
+        printf("Received from client: %s\n", buffer); // Print received data
+        
+        // Check command type
+        if (strncmp(buffer, "SEND", 4) == 0) {
+            // Process the SEND command
+            printf("Receive Send command\r\n");
+            handleSendCommand(client_socket, mail_spool_dir);
+        } else if (strcmp(buffer, "QUIT") == 0) {
+            // Process the QUIT command (client disconnect)
+            break;
+        } else {
+            // Unknown command
+            send(client_socket, "ERR\n", 4, 0);
         }
     }
 
-    shutdown(create_socket, SHUT_RDWR);
-    close(create_socket);
-    return EXIT_SUCCESS;
+    close(client_socket); // Close client socket
+    return NULL;
 }
