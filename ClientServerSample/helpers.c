@@ -5,6 +5,7 @@
 #include <string.h>      
 #include <sys/socket.h>
 #include "helpers.h"
+#include <dirent.h>
 
 void signalHandler(int sig) {
     // Suppress unused parameter warning
@@ -66,8 +67,6 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     // Read Sender
     if (readline(client_socket, sender, sizeof(sender)) <= 0 || !isValidUsername(sender)) {
         printf("DEBUG: Invalid or missing sender received.\n");
-        sender[0] = 'X';
-        sender[1] = '\0';
         send(client_socket, "Sender username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
         return;
     } else {
@@ -140,6 +139,68 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Sent 'OK' response to client.\n");
 }
 
+void handleListCommand(int client_socket, const char *mail_spool_dir) {
+    char username[81];
+    char buffer[BUF];
+    char user_inbox_path[256];
+    FILE *inbox_file;
+    int message_count = 0;
+
+    // Read the username
+    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
+        printf("DEBUG: Invalid or missing username received.\n");
+        send(client_socket, "0\n", 2, 0); // Respond with "0" for no messages
+        return;
+    }
+
+    printf("DEBUG: Username for LIST: %s\n", username);
+
+    // Construct the path to the user's inbox file
+    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
+    inbox_file = fopen(user_inbox_path, "r");
+
+    if (!inbox_file) {
+        // User inbox not found or other error
+        printf("DEBUG: Inbox file not found for user %s.\n", username);
+        send(client_socket, "0\n", 2, 0);
+        return;
+    }
+
+    // Read subjects from the inbox file
+    buffer[0] = '\0'; // Clear the buffer
+    char line[BUF];
+    size_t remaining_size = sizeof(buffer); // Track remaining space in buffer
+
+    while (fgets(line, sizeof(line), inbox_file)) {
+        // If the line starts with "Subject: ", extract the subject
+        if (strncmp(line, "Subject: ", 9) == 0) {
+            message_count++;
+            size_t subject_length = strlen(line + 9); // Length of the subject
+            if (subject_length + 1 > remaining_size) { // +1 for null terminator
+                printf("DEBUG: Buffer overflow prevented while reading subjects.\n");
+                break;
+            }
+            strncat(buffer, line + 9, remaining_size - 1);
+            remaining_size -= subject_length;
+        }
+    }  
+    fclose(inbox_file);
+
+    // Prepare response
+    char response[BUF];
+    snprintf(response, sizeof(response), "%d\n", message_count);
+    size_t response_length = strlen(response);
+
+    if (response_length + strlen(buffer) < sizeof(response)) {
+        strncat(response, buffer, sizeof(response) - response_length - 1);
+    } else {
+        printf("DEBUG: Response buffer too small to include all subjects.\n");
+    }
+
+    // Send response to the client
+    printf("DEBUG: Sending LIST response:\n%s", response);
+    send(client_socket, response, strlen(response), 0);
+}
 
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
@@ -178,10 +239,15 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         } else if (strcmp(buffer, "QUIT") == 0) {
             // Process the QUIT command (client disconnect)
             break;
+        } else if (strncmp(buffer, "LIST", 4) == 0) {
+        // Process the LIST command
+        printf("Receive LIST command\r\n");
+        handleListCommand(client_socket, mail_spool_dir);
         } else {
             // Unknown command
             send(client_socket, "Unknown command\n", 25, 0);
-        }
+        }  
+
     }
 
     close(client_socket); // Close client socket

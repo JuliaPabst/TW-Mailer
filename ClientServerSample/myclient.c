@@ -21,6 +21,84 @@ int isValidInput(const char *input, int maxLength) {
     return len > 0 && len <= maxLength;
 }
 
+void handleSendCommand(int create_socket) {
+    char buffer[BUF];
+    int size;
+
+    // Send "SEND" command to the server
+    sendMessage(create_socket, "SEND");
+
+    // Collect sender, receiver, subject, and message
+    const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
+    int maxLengths[] = {8, 8, 80, BUF - 1};
+
+    for (int i = 0; i < 4; i++) {
+        while (1) { // Retry loop for invalid input
+            printf(">> %s: ", prompts[i]);
+            if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                size = strlen(buffer);
+                if (buffer[size - 1] == '\n') {
+                    buffer[--size] = '\0'; // Remove newline
+                }
+
+                if (i < 3 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
+                    printf("Invalid %s! Try again.\n", prompts[i]);
+                    continue; // Retry current prompt
+                }
+
+                if (i == 3) { // Multi-line input for "Message"
+                    sendMessage(create_socket, buffer); // Send first line of the message
+                    while (1) {
+                        printf(">> ");
+                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                            size = strlen(buffer);
+                            if (buffer[size - 1] == '\n') {
+                                buffer[--size] = '\0';
+                            }
+                            if (strcmp(buffer, ".") == 0) { // End of message
+                                sendMessage(create_socket, buffer);
+                                break;
+                            }
+                            sendMessage(create_socket, buffer);
+                        }
+                    }
+                    break; // Exit the retry loop for the message
+                } else {
+                    sendMessage(create_socket, buffer);
+                    break; // Valid input, move to the next prompt
+                }
+            }
+        }
+    }
+}
+
+void handleListCommand(int create_socket) {
+    char buffer[BUF];
+    int size;
+
+    // Send "LIST" command to the server
+    sendMessage(create_socket, "LIST");
+
+    // Prompt user for username
+    printf(">> Username (max 8 chars): ");
+    if (fgets(buffer, BUF - 1, stdin) != NULL) {
+        size = strlen(buffer);
+        if (buffer[size - 1] == '\n') {
+            buffer[--size] = '\0'; // Remove newline
+        }
+
+        if (!isValidInput(buffer, 8)) {
+            printf("Invalid username! Try again.\n");
+            return; // Abort if username is invalid
+        }
+
+        // Send the username to the server
+        sendMessage(create_socket, buffer);
+    }
+}
+
+
+
 int main(int argc, char **argv) {
     int create_socket;
     char buffer[BUF];
@@ -91,52 +169,16 @@ int main(int argc, char **argv) {
                 buffer[--size] = '\0';
             }
 
-            // Handle "SEND" command
-            if (strcmp(buffer, "SEND") == 0) {
-                // Send "SEND" command to the server
-                sendMessage(create_socket, buffer);
+            if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0){
+                // Handle "SEND" command
+                if (strcmp(buffer, "SEND") == 0) {
+                    handleSendCommand(create_socket);
+                }   
 
-                // Collect sender, receiver, subject, and message
-                const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
-                int maxLengths[] = {8, 8, 80, BUF - 1};
-                for (int i = 0; i < 4; i++) {
-                    while (1) { // Retry loop for invalid input
-                        printf(">> %s: ", prompts[i]);
-                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                            size = strlen(buffer);
-                            if (buffer[size - 1] == '\n') {
-                                buffer[--size] = '\0'; // Remove newline
-                            }
-
-                            if (i < 3 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
-                                printf("Invalid %s! Try again.\n", prompts[i]);
-                                continue; // Retry current prompt
-                            }
-
-                            if (i == 3) { // Multi-line input for "Message"
-                                sendMessage(create_socket, buffer); // Send first line of the message
-                                while (1) {
-                                    printf(">> ");
-                                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                                        size = strlen(buffer);
-                                        if (buffer[size - 1] == '\n') {
-                                            buffer[--size] = '\0';
-                                        }
-                                        if (strcmp(buffer, ".") == 0) { // End of message
-                                            sendMessage(create_socket, buffer);
-                                            break;
-                                        }
-                                        sendMessage(create_socket, buffer);
-                                    }
-                                }
-                                break; // Exit the retry loop for the message
-                            } else {
-                                sendMessage(create_socket, buffer);
-                                break; // Valid input, move to the next prompt
-                            }
-                        }
-                    }
-                }
+                // Handle "LIST" command
+                if (strcmp(buffer, "LIST") == 0) {
+                    handleListCommand(create_socket);
+                } 
 
                 // Receive server response
                 size = recv(create_socket, buffer, BUF - 1, 0);
