@@ -162,7 +162,7 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     if (!inbox_file) {
         // User inbox not found or other error
         printf("DEBUG: Inbox file not found for user %s.\n", username);
-        send(client_socket, "0\n", 2, 0);
+        send(client_socket, "This user has not received any messages yet!\n", 60, 0);
         return;
     }
 

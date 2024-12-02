@@ -79,23 +79,46 @@ void handleListCommand(int create_socket) {
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
 
-    // Prompt user for username
-    printf(">> Username (max 8 chars): ");
-    if (fgets(buffer, BUF - 1, stdin) != NULL) {
-        size = strlen(buffer);
-        if (buffer[size - 1] == '\n') {
-            buffer[--size] = '\0'; // Remove newline
-        }
+    // Prompt user for username until a valid one is provided
+    while (1) {
+        printf(">> Username (max 8 chars): ");
+        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+            size = strlen(buffer);
+            if (buffer[size - 1] == '\n') {
+                buffer[--size] = '\0'; // Remove newline
+            }
 
-        if (!isValidInput(buffer, 8)) {
-            printf("Invalid username! Try again.\n");
-            return; // Abort if username is invalid
+            if (isValidInput(buffer, 8)) {
+                // Valid username provided
+                break;
+            } else {
+                printf("Invalid username! Try again.\n");
+            }
         }
+    }
 
-        // Send the username to the server
-        sendMessage(create_socket, buffer);
+    // Send the valid username to the server
+    sendMessage(create_socket, buffer);
+
+       // Wait for server response
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (size == -1) {
+        perror("recv error");
+    } else if (size == 0) {
+        printf("Server closed remote socket\n");
+    } else {
+        buffer[size] = '\0'; // Null-terminate the string
+
+        // Check if server response indicates no messages
+        if (strstr(buffer, "This user has not received any messages yet!") != NULL) {
+            printf("<< %s\n", buffer); // Print the server's response
+        } else {
+            // Otherwise, assume it's a list of messages
+            printf("<< Messages received: %s\n", buffer);
+        }
     }
 }
+
 
 
 
@@ -173,6 +196,19 @@ int main(int argc, char **argv) {
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
                     handleSendCommand(create_socket);
+
+                    // Receive server response
+                    size = recv(create_socket, buffer, BUF - 1, 0);
+                    if (size == -1) {
+                        perror("recv error");
+                        break;
+                    } else if (size == 0) {
+                        printf("Server closed remote socket\n");
+                        break;
+                    } else {
+                        buffer[size] = '\0';
+                        printf("<< %s\n", buffer);
+                    }
                 }   
 
                 // Handle "LIST" command
@@ -180,18 +216,7 @@ int main(int argc, char **argv) {
                     handleListCommand(create_socket);
                 } 
 
-                // Receive server response
-                size = recv(create_socket, buffer, BUF - 1, 0);
-                if (size == -1) {
-                    perror("recv error");
-                    break;
-                } else if (size == 0) {
-                    printf("Server closed remote socket\n");
-                    break;
-                } else {
-                    buffer[size] = '\0';
-                    printf("<< %s\n", buffer);
-                }
+                
                 continue; // Skip further processing
             }
 
