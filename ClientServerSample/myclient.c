@@ -6,12 +6,22 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "helpers.h"
 
 #define BUF 1024
 
-int main(int argc, char **argv)
-{
+void sendMessage(int socket, const char *message) {
+    // printf("DEBUG: Sending message: '%s'\n", message);
+    if (send(socket, message, strlen(message) + 1, 0) == -1) { // +1 for null terminator
+        perror("Error sending message");
+    }
+}
+
+int isValidInput(const char *input, int maxLength) {
+    int len = strlen(input);
+    return len > 0 && len <= maxLength;
+}
+
+int main(int argc, char **argv) {
     int create_socket;
     char buffer[BUF];
     struct sockaddr_in address;
@@ -54,7 +64,7 @@ int main(int argc, char **argv)
     ////////////////////////////////////////////////////////////////////////////
     // CREATE A CONNECTION
     if (connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
-        perror("Connect error - no server available");
+        perror("Connection error - no server available");
         return EXIT_FAILURE;
     }
 
@@ -84,60 +94,51 @@ int main(int argc, char **argv)
             // Handle "SEND" command
             if (strcmp(buffer, "SEND") == 0) {
                 // Send "SEND" command to the server
-                if (send(create_socket, buffer, size + 1, 0) == -1) {
-                    perror("send error");
-                    break;
-                }
-                
+                sendMessage(create_socket, buffer);
+
                 // Collect sender, receiver, subject, and message
-                const char *prompts[] = {"Sender", "Receiver", "Subject", "Message"};
+                const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
+                int maxLengths[] = {8, 8, 80, BUF - 1};
                 for (int i = 0; i < 4; i++) {
-                    printf(">> %s: ", prompts[i]);
-                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                        size = strlen(buffer);
-                        if (buffer[size - 1] == '\n') {
-                            buffer[--size] = '\0'; // Remove newline
-                        }
+                    while (1) { // Retry loop for invalid input
+                        printf(">> %s: ", prompts[i]);
+                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                            size = strlen(buffer);
+                            if (buffer[size - 1] == '\n') {
+                                buffer[--size] = '\0'; // Remove newline
+                            }
 
-                        if (send(create_socket, buffer, size + 1, 0) == -1) {
-                            perror("send error");
-                            break;
-                        } else {
-                            printf("I am sending something: %s\r\n", buffer);
-                        }
+                            if (i < 3 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
+                                printf("Invalid %s! Try again.\n", prompts[i]);
+                                continue; // Retry current prompt
+                            }
 
-                        
-
-                        // For the message, handle multi-line input
-                        if (i == 3) {
-                            while (1) {
-                                printf(">> ");
-                                if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                                    size = strlen(buffer);
-                                    if (buffer[size - 1] == '\n') {
-                                        buffer[--size] = '\0'; // Remove newline
-                                    }
-
-                                    if (strcmp(buffer, ".") == 0) { // End of message indicator
-                                        if (send(create_socket, buffer, size + 1, 0) == -1) {
-                                            perror("send error");
-                                        } else {
-                                            printf("I am sending the end of message indicator: %s\r\n", buffer);
+                            if (i == 3) { // Multi-line input for "Message"
+                                sendMessage(create_socket, buffer); // Send first line of the message
+                                while (1) {
+                                    printf(">> ");
+                                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                                        size = strlen(buffer);
+                                        if (buffer[size - 1] == '\n') {
+                                            buffer[--size] = '\0';
                                         }
-                                        break;
-                                    }
-
-                                    if (send(create_socket, buffer, size + 1, 0) == -1) {
-                                        perror("send error");
-                                        break;
+                                        if (strcmp(buffer, ".") == 0) { // End of message
+                                            sendMessage(create_socket, buffer);
+                                            break;
+                                        }
+                                        sendMessage(create_socket, buffer);
                                     }
                                 }
+                                break; // Exit the retry loop for the message
+                            } else {
+                                sendMessage(create_socket, buffer);
+                                break; // Valid input, move to the next prompt
                             }
                         }
                     }
                 }
 
-                // Receive response from the server
+                // Receive server response
                 size = recv(create_socket, buffer, BUF - 1, 0);
                 if (size == -1) {
                     perror("recv error");
@@ -155,10 +156,7 @@ int main(int argc, char **argv)
             isQuit = strcmp(buffer, "QUIT") == 0;
 
             // Send other commands to the server
-            if (send(create_socket, buffer, size + 1, 0) == -1) {
-                perror("send error");
-                break;
-            }
+            sendMessage(create_socket, buffer);
 
             // Receive response from the server
             size = recv(create_socket, buffer, BUF - 1, 0);

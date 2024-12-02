@@ -7,3 +7,9 @@ my
 message
 
 ---
+From: me
+To: you
+Subject: hu
+huhu
+
+---

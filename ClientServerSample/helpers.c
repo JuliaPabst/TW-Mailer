@@ -58,7 +58,7 @@ int isValidUsername(const char *username) {
 }
 
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
-    char sender[9], receiver[9], subject[81], message[BUF];
+    char sender[81], receiver[81], subject[81], message[BUF];
     char buffer[BUF];
     char inbox_path[256];
     FILE *inbox_file;
@@ -66,16 +66,20 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     // Read Sender
     if (readline(client_socket, sender, sizeof(sender)) <= 0 || !isValidUsername(sender)) {
         printf("DEBUG: Invalid or missing sender received.\n");
-        send(client_socket, "ERR\n", 4, 0);
+        sender[0] = 'X';
+        sender[1] = '\0';
+        send(client_socket, "Sender username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
         return;
+    } else {
+        send(client_socket, "Sender received\n", 4, 0);
     }
 
     printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
     // Read Receiver
-    if (readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)) {
+    if (readline(client_socket, receiver, sizeof(receiver)) <= 0  || !isValidUsername(receiver)){
         printf("DEBUG: Invalid or missing receiver received.\n");
-        send(client_socket, "ERR\n", 4, 0);
+        send(client_socket, "Receiver username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
         return;
     }
     printf("DEBUG: Receiver: %s\n", receiver); // Debug receiver
@@ -83,7 +87,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     // Read Subject
     if (readline(client_socket, subject, sizeof(subject)) <= 0 || strlen(subject) > 80) {
         printf("DEBUG: Invalid or missing subject received.\n");
-        send(client_socket, "ERR\n", 4, 0);
+        send(client_socket, "Receiver subject was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
         return;
     }
     printf("DEBUG: Subject: %s\n", subject); // Debug subject
@@ -95,7 +99,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     while (1) {
         if (readline(client_socket, buffer, sizeof(buffer)) <= 0) {
             printf("DEBUG: Error or disconnection while reading message lines.\n");
-            send(client_socket, "ERR\n", 4, 0);
+            send(client_socket, "Missing content\n", 4, 0);
             return;
         }
         printf("DEBUG: Message line received: %s\n", buffer); // Debug message line
@@ -124,7 +128,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     inbox_file = fopen(inbox_path, "a");
     if (!inbox_file) {
         perror("DEBUG: Error opening inbox file");
-        send(client_socket, "ERR\n", 4, 0);
+        send(client_socket, "Message not sent to inbox of receiver.\n", 4, 0);
         return;
     }
     fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n---\n", sender, receiver, subject, message);
@@ -176,7 +180,7 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             break;
         } else {
             // Unknown command
-            send(client_socket, "ERR\n", 4, 0);
+            send(client_socket, "Unknown command\n", 25, 0);
         }
     }
 
