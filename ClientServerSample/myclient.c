@@ -88,7 +88,7 @@ int main(int argc, char **argv)
                     perror("send error");
                     break;
                 }
-                  printf("I am sending something!");
+                
                 // Collect sender, receiver, subject, and message
                 const char *prompts[] = {"Sender", "Receiver", "Subject", "Message"};
                 for (int i = 0; i < 4; i++) {
@@ -102,7 +102,11 @@ int main(int argc, char **argv)
                         if (send(create_socket, buffer, size + 1, 0) == -1) {
                             perror("send error");
                             break;
+                        } else {
+                            printf("I am sending something: %s\r\n", buffer);
                         }
+
+                        
 
                         // For the message, handle multi-line input
                         if (i == 3) {
@@ -114,10 +118,11 @@ int main(int argc, char **argv)
                                         buffer[--size] = '\0'; // Remove newline
                                     }
 
-                                    if (strcmp(buffer, ".") == 0) {
-                                        // Send end of message marker
+                                    if (strcmp(buffer, ".") == 0) { // End of message indicator
                                         if (send(create_socket, buffer, size + 1, 0) == -1) {
                                             perror("send error");
+                                        } else {
+                                            printf("I am sending the end of message indicator: %s\r\n", buffer);
                                         }
                                         break;
                                     }

@@ -35,7 +35,7 @@ int readline(int socket, char *buffer, size_t size) {
             break;
         }
 
-        if (c == '\n') {
+        if (c == '\0') {
             break; // End of line
         }
 
