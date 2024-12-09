@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #define BUF 1024
 
@@ -34,6 +35,7 @@ void handleSendCommand(int create_socket) {
 
     for (int i = 0; i < 4; i++) {
         while (1) { // Retry loop for invalid input
+            memset(buffer, 0, sizeof(buffer)); // Clear the buffer
             printf(">> %s: ", prompts[i]);
             if (fgets(buffer, BUF - 1, stdin) != NULL) {
                 size = strlen(buffer);
@@ -50,6 +52,7 @@ void handleSendCommand(int create_socket) {
                     sendMessage(create_socket, buffer); // Send first line of the message
                     while (1) {
                         printf(">> ");
+                        memset(buffer, 0, sizeof(buffer)); // Clear buffer
                         if (fgets(buffer, BUF - 1, stdin) != NULL) {
                             size = strlen(buffer);
                             if (buffer[size - 1] == '\n') {
@@ -70,7 +73,17 @@ void handleSendCommand(int create_socket) {
             }
         }
     }
+
+    // Wait for server response
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (size > 0) {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Print server response
+    } else {
+        perror("recv error");
+    }
 }
+
 
 void handleListCommand(int create_socket) {
     char buffer[BUF];
@@ -80,42 +93,48 @@ void handleListCommand(int create_socket) {
     sendMessage(create_socket, "LIST");
 
     // Prompt user for username until a valid one is provided
-    while (1) {
+    while (1) { 
         printf(">> Username (max 8 chars): ");
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
-            size = strlen(buffer);
-            if (buffer[size - 1] == '\n') {
-                buffer[--size] = '\0'; // Remove newline
+            size_t len = strlen(buffer);
+            if (buffer[len - 1] == '\n') buffer[--len] = '\0'; // Remove newline
+
+            // Check if username is valid
+            if (!isValidInput(buffer, 8)) {
+                printf("Invalid username! Try again.\n");
+                continue;
             }
 
-            if (isValidInput(buffer, 8)) {
-                // Valid username provided
-                break;
-            } else {
-                printf("Invalid username! Try again.\n");
-            }
+            sendMessage(create_socket, buffer);
+            break;
         }
     }
 
-    // Send the valid username to the server
-    sendMessage(create_socket, buffer);
-
-       // Wait for server response
+    // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size == -1) {
-        perror("recv error");
-    } else if (size == 0) {
-        printf("Server closed remote socket\n");
-    } else {
-        buffer[size] = '\0'; // Null-terminate the string
+    if (size > 0) {
+        buffer[size] = '\0'; // Null-terminate string
 
-        // Check if server response indicates no messages
+        // Check if response is about no messages
         if (strstr(buffer, "This user has not received any messages yet!") != NULL) {
-            printf("<< %s\n", buffer); // Print the server's response
+            printf("<< %s", buffer);
         } else {
-            // Otherwise, assume it's a list of messages
-            printf("<< Messages received: %s\n", buffer);
+            char *line = strtok(buffer, "\n");
+            if (line && isdigit(line[0])) { // Check if first line is the count of messages
+                int count = atoi(line);
+                printf("<< Messages received: %d\n", count);
+                int counter = 1;
+                while ((line = strtok(NULL, "\n")) != NULL) {
+                    printf("%d. %s\n", counter, line); // Print subjects of messages
+                    counter++; 
+                }
+                printf("\n");
+            } else {
+                printf("<< %s\n", buffer); // Print error or unexpected response
+            }
         }
+    } else {
+        perror("recv error");
     }
 }
 

@@ -117,7 +117,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         strcat(message, "\n");
     }
 
-    printf("DEBUG: Complete message:\n%s\n", message); // Debug full message
+    printf("DEBUG: Complete message:\n%s", message); // Debug full message
 
     // Prepare receiver's inbox path
     snprintf(inbox_path, sizeof(inbox_path), "%s/%s_inbox.txt", mail_spool_dir, receiver);
@@ -162,7 +162,7 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     if (!inbox_file) {
         // User inbox not found or other error
         printf("DEBUG: Inbox file not found for user %s.\n", username);
-        send(client_socket, "This user has not received any messages yet!\n", 60, 0);
+        send(client_socket, "This user has not received any messages yet!\n\n", 60, 0);
         return;
     }
 
@@ -210,7 +210,7 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
 
     ////////////////////////////////////////////////////////////////////////////
    // SEND welcome message
-   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
+   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n\n");
    if (send(client_socket, buffer, strlen(buffer), 0) == -1)
    {
       perror("send failed");
@@ -229,7 +229,7 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             break; // Exit on error or client disconnect
         }
         buffer[size] = '\0'; // Null-terminate the string
-        printf("Received from client: %s\n", buffer); // Print received data
+        printf("\nReceived from client: %s\n", buffer); // Print received data
         
         // Check command type
         if (strncmp(buffer, "SEND", 4) == 0) {
