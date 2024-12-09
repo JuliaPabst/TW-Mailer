@@ -49,25 +49,28 @@ void handleSendCommand(int create_socket) {
                 }
 
                 if (i == 3) { // Multi-line input for "Message"
+                    // Send the first line of the message
+                    sendMessage(create_socket, buffer);
+
                     while (1) {
                         printf(">> ");
                         memset(buffer, 0, sizeof(buffer)); // Clear buffer
                         if (fgets(buffer, BUF - 1, stdin) != NULL) {
                             size = strlen(buffer);
                             if (buffer[size - 1] == '\n') {
-                                buffer[--size] = '\0'; // Remove newline
+                                buffer[--size] = '\0';
                             }
-                            sendMessage(create_socket, buffer); // Send every line, even if empty
+                            sendMessage(create_socket, buffer); // Send every line, including empty ones
                             if (strcmp(buffer, ".") == 0) { // End of message
                                 break;
                             }
                         }
                     }
-                    break; // Exit the retry loop for the message
+                    break;
+                } else {
+                    sendMessage(create_socket, buffer);
+                    break;
                 }
-                sendMessage(create_socket, buffer); // Send the input to the server
-                break; // Exit the retry loop for the current prompt            
-
             }
         }
     }
