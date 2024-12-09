@@ -48,8 +48,6 @@ int readline(int socket, char *buffer, size_t size) {
     return (int)i; // Return the number of characters read
 }
 
-
-
 int isValidUsername(const char *username) {
     if (strlen(username) > 8) return 0;
     for (size_t i = 0; i < strlen(username); ++i) {
@@ -76,7 +74,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
     // Read Receiver
-    if (readline(client_socket, receiver, sizeof(receiver)) <= 0  || !isValidUsername(receiver)){
+    if (readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)){
         printf("DEBUG: Invalid or missing receiver received.\n");
         send(client_socket, "Receiver username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
         return;
@@ -96,12 +94,14 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Starting to read message lines.\n");
 
     while (1) {
-        if (readline(client_socket, buffer, sizeof(buffer)) <= 0) {
+        int bytes_read = readline(client_socket, buffer, sizeof(buffer));
+        if (bytes_read < 0) { // Connection error
             printf("DEBUG: Error or disconnection while reading message lines.\n");
-            send(client_socket, "Missing content\n", 4, 0);
+            send(client_socket, "ERR\n", 4, 0);
             return;
         }
-        printf("DEBUG: Message line received: %s\n", buffer); // Debug message line
+        printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
+
         if (strcmp(buffer, ".") == 0) {
             printf("DEBUG: End of message detected.\n");
             break; // End of message
@@ -114,7 +114,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
 
         strcat(message, buffer);
-        strcat(message, "\n");
+        strcat(message, "\n"); // Append newline even for empty lines
     }
 
     printf("DEBUG: Complete message:\n%s", message); // Debug full message
