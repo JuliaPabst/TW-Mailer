@@ -94,27 +94,27 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Starting to read message lines.\n");
 
     while (1) {
-    int bytes_read = readline(client_socket, buffer, sizeof(buffer));
-    if (bytes_read < 0) { // Connection error or disconnection
-        printf("DEBUG: Error or disconnection while reading message lines.\n");
-        send(client_socket, "ERR\n", 4, 0);
-        return;
-    }
-    printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
+        int bytes_read = readline(client_socket, buffer, sizeof(buffer));
+        if (bytes_read < 0) { // Connection error or disconnection
+            printf("DEBUG: Error or disconnection while reading message lines.\n");
+            send(client_socket, "ERR\n", 4, 0);
+            return;
+        }
+        printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
 
-    if (strcmp(buffer, ".") == 0) { // End of message detected
-        printf("DEBUG: End of message detected.\n");
-        break;
-    }
+        if (strcmp(buffer, ".") == 0) { // End of message detected
+            printf("DEBUG: End of message detected.\n");
+            break;
+        }
 
-    if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
-        printf("DEBUG: Message buffer overflow detected.\n");
-        send(client_socket, "ERR\n", 4, 0);
-        return;
-    }
+        if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
+            printf("DEBUG: Message buffer overflow detected.\n");
+            send(client_socket, "ERR\n", 4, 0);
+            return;
+        }
 
-    strcat(message, buffer);
-    strcat(message, "\n"); // Append a newline to each line
+        strcat(message, buffer);
+        strcat(message, "\n"); // Append a newline to each line
     }
 
     printf("DEBUG: Complete message:\n%s", message); // Debug full message
@@ -202,6 +202,103 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     send(client_socket, response, strlen(response), 0);
 }
 
+void handleReadCommand(int client_socket, const char *mail_spool_dir) {
+    char username[81], message_number_str[10];
+    char user_inbox_path[256];
+    char buffer[BUF];
+    FILE *inbox_file;
+    int message_number;
+
+    // 1. Read Username
+    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
+        printf("DEBUG: Invalid or missing username received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+    printf("DEBUG: Username for READ: %s\n", username);
+
+    // 2. Read Message Number
+    if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
+        sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
+        printf("DEBUG: Invalid or missing message number received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+    printf("DEBUG: Message number for READ: %d\n", message_number);
+
+    // 3. Construct Inbox Path
+    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
+    inbox_file = fopen(user_inbox_path, "r");
+
+    if (!inbox_file) {
+        printf("DEBUG: Inbox file not found for user %s.\n", username);
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    // 4. Locate and Read the Specific Message
+    int current_message = 1;
+    int found = 0;
+    buffer[0] = '\0';
+    char line[BUF];
+    int is_first_message = 1;
+
+    while (fgets(line, sizeof(line), inbox_file)) {
+        if (is_first_message) {
+            // First message special handling
+            if (current_message == message_number) {
+                found = 1;
+                break;
+            }
+            is_first_message = 0;
+        } else if (strncmp(line, "---", 3) == 0) {
+            // Message boundary detected
+            current_message++;
+            if (current_message == message_number) {
+                found = 1;
+                break;
+            }
+        }
+    }
+
+    if (!found || feof(inbox_file)) {
+        printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
+        send(client_socket, "ERR\n", 4, 0);
+        fclose(inbox_file);
+        return;
+    }
+
+    // 5. Extract the Message
+    buffer[0] = '\0';
+    while (fgets(line, sizeof(line), inbox_file)) {
+        if (strncmp(line, "---", 3) == 0) {
+            break;
+        }
+        strncat(buffer, line, sizeof(buffer) - strlen(buffer) - 1);
+    }
+    fclose(inbox_file);
+
+    if (strlen(buffer) == 0) {
+        printf("DEBUG: Message number %d is empty for user %s.\n", message_number, username);
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    // 6. Combine "OK" and Message in One Send
+    char response[BUF];
+    size_t response_length = snprintf(response, sizeof(response), "OK\n");
+    size_t buffer_length = strlen(buffer);
+
+    if (response_length + buffer_length >= sizeof(response)) {
+        // Truncate the message to fit into the response buffer
+        strncat(response, buffer, sizeof(response) - response_length - 1);
+    } else {
+        strcat(response, buffer);
+    }
+
+    printf("DEBUG: Sending READ response:\n%s", response);
+    send(client_socket, response, strlen(response), 0);
+}
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
     int client_socket = *(int *)data; // Client socket
@@ -234,15 +331,19 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         // Check command type
         if (strncmp(buffer, "SEND", 4) == 0) {
             // Process the SEND command
-            printf("Receive Send command\r\n");
+            printf("Receive SEND command\r\n");
             handleSendCommand(client_socket, mail_spool_dir);
         } else if (strcmp(buffer, "QUIT") == 0) {
             // Process the QUIT command (client disconnect)
             break;
         } else if (strncmp(buffer, "LIST", 4) == 0) {
-        // Process the LIST command
-        printf("Receive LIST command\r\n");
-        handleListCommand(client_socket, mail_spool_dir);
+            // Process the LIST command
+            printf("Receive LIST command\r\n");
+            handleListCommand(client_socket, mail_spool_dir);
+        } else if (strncmp(buffer, "READ", 4) == 0) {
+            // Process the READ command
+            printf("Receive READ command\r\n");
+            handleReadCommand(client_socket, mail_spool_dir);
         } else {
             // Unknown command
             send(client_socket, "Unknown command\n", 25, 0);
