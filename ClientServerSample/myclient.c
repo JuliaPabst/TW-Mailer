@@ -84,7 +84,6 @@ void handleSendCommand(int create_socket) {
     }
 }
 
-
 void handleListCommand(int create_socket) {
     char buffer[BUF];
     int size;
@@ -115,29 +114,32 @@ void handleListCommand(int create_socket) {
     if (size > 0) {
         buffer[size] = '\0'; // Null-terminate string
 
-        // Check if response is about no messages
-        if (strstr(buffer, "This user has not received any messages yet!") != NULL) {
-            printf("<< %s", buffer);
-        } else {
-            char *line = strtok(buffer, "\n");
-            if (line && isdigit(line[0])) { // Check if first line is the count of messages
-                int count = atoi(line);
-                printf("<< Messages received: %d\n", count);
+        // Check if response indicates no messages
+        char *line = strtok(buffer, "\n");
+        if (line && isdigit(line[0])) { // Check if first line is the count of messages
+            int count = atoi(line);
+            printf("<< Messages received: %d\n", count);
+
+            if (count == 0) {
+                line = strtok(NULL, "\n"); // Get the next line
+                if (line) {
+                    printf("<< %s\n\n", line); // Print "This user has not received any messages yet!"
+                }
+            } else {
                 int counter = 1;
                 while ((line = strtok(NULL, "\n")) != NULL) {
                     printf("%d. %s\n", counter, line); // Print subjects of messages
                     counter++; 
                 }
                 printf("\n");
-            } else {
-                printf("<< %s\n", buffer); // Print error or unexpected response
             }
+        } else {
+            printf("<< %s\n", buffer); // Print error or unexpected response
         }
     } else {
         perror("recv error");
     }
 }
-
 
 void handleReadCommand(int create_socket) {
     char buffer[BUF];
@@ -184,7 +186,11 @@ void handleReadCommand(int create_socket) {
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0';
-        printf("%s\n", buffer);
+        if (strncmp(buffer, "OK", 2) == 0 || strncmp(buffer, "ERR", 3) == 0) {
+            printf("<< %s\n", buffer);
+        } else {
+            printf("%s\n", buffer);
+        }
     } else if (size == 0) {
         printf("Server closed remote socket\n");
     } else {
@@ -193,7 +199,57 @@ void handleReadCommand(int create_socket) {
 
 }
 
+void handleDelCommand(int create_socket) {
+    char buffer[BUF];
+    int size;
 
+    sendMessage(create_socket, "DEL");
+
+    // Ask for username and validate it
+    while (1) {
+        printf(">> Username (max 8 chars): ");
+        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+            size_t len = strlen(buffer);
+            if (buffer[len - 1] == '\n') buffer[--len] = '\0'; // remove newline
+
+            if (!isValidInput(buffer, 8)) {
+                printf("Invalid username! Try again.\n");
+                continue;
+            }
+
+            sendMessage(create_socket, buffer); // Send the username to the server
+            break;
+        }
+    }
+
+    // Ask and validate message number
+    while (1) {
+        printf(">> Message Number: ");
+        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+            size_t len = strlen(buffer);
+            if (buffer[len - 1] == '\n') buffer[--len] = '\0';
+
+            if (sscanf(buffer, "%d", &size) != 1 || size <= 0) {
+                printf("Invalid message number! Try again.\n");
+                continue;
+            }
+
+            sendMessage(create_socket, buffer); // Send the message number to the server
+            break;
+        }
+    }
+
+    // Get the response from the server
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (size > 0) {
+        buffer[size] = '\0'; // Terminate string
+        printf("<< %s\n", buffer);
+    } else if (size == 0) {
+        printf("Server closed remote socket\n");
+    } else {
+        perror("recv error");
+    }
+}
 
 int main(int argc, char **argv) {
     int create_socket;
@@ -265,7 +321,7 @@ int main(int argc, char **argv) {
                 buffer[--size] = '\0';
             }
 
-            if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0){
+            if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0) {
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
                     handleSendCommand(create_socket);
@@ -286,6 +342,8 @@ int main(int argc, char **argv) {
                     handleListCommand(create_socket);
                 } else if (strcmp(buffer, "READ") == 0) {
                     handleReadCommand(create_socket);
+                } else if (strcmp(buffer, "DEL") == 0) {
+                    handleDelCommand(create_socket);
                 }
 
                 memset(buffer, 0, sizeof(buffer)); // Clear buffer                

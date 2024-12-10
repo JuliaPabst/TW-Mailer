@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include "helpers.h"
 #include <dirent.h>
+#include <errno.h>
 
 void signalHandler(int sig) {
     // Suppress unused parameter warning
@@ -162,7 +163,8 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     if (!inbox_file) {
         // User inbox not found or other error
         printf("DEBUG: Inbox file not found for user %s.\n", username);
-        send(client_socket, "This user has not received any messages yet!\n\n", 60, 0);
+        send(client_socket, "0\nThis user has not received any messages yet!\n\n", 60, 0);
+        printf("DEBUG: Sending LIST response:\n0\nThis user has not received any messages yet!\n\n");
         return;
     }
 
@@ -183,7 +185,7 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
             strncat(buffer, line + 9, remaining_size - 1);
             remaining_size -= subject_length;
         }
-    }  
+    }
     fclose(inbox_file);
 
     // Prepare response
@@ -296,8 +298,93 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
         strcat(response, buffer);
     }
 
-    printf("DEBUG: Sending READ response:\n%s", response);
+    printf("DEBUG: Sent 'OK' response to client.\n");
+    printf("DEBUG: Sending READ response:\n%s", buffer);
     send(client_socket, response, strlen(response), 0);
+}
+
+void handleDelCommand(int client_socket, const char *mail_spool_dir) {
+    char username[81], message_number_str[10];
+    char user_inbox_path[256];
+    char buffer[BUF];
+    FILE *inbox_file, *temp_file;
+    int message_number;
+
+    // 1. Read Username
+    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
+        printf("DEBUG: Invalid or missing username received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+    printf("DEBUG: Username for DEL: %s\n", username);
+
+    // 2. Read Message Number
+    if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
+        sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
+        printf("DEBUG: Invalid or missing message number received.\n");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+    printf("DEBUG: Message number for DEL: %d\n", message_number);
+
+    // 3. Construct Inbox Path
+    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
+
+    inbox_file = fopen(user_inbox_path, "r");
+    if (!inbox_file) {
+        printf("DEBUG: Inbox file not found for user %s.\n", username);
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    // 4. Create Temporary File
+    snprintf(buffer, sizeof(buffer), "%s/temp_inbox.txt", mail_spool_dir);
+    temp_file = fopen(buffer, "w");
+    if (!temp_file) {
+        perror("DEBUG: Failed to create temp file");
+        fclose(inbox_file);
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    // 5. Locate and Remove the Specific Message
+    int current_message = 1;
+    int found = 0;
+    char line[BUF];
+
+    while (fgets(line, sizeof(line), inbox_file)) {
+        if (strncmp(line, "---", 3) == 0) { // Message boundary
+            current_message++;
+        }
+
+        if (current_message == message_number) {
+            found = 1;
+            continue; // Skip lines of the target message
+        }
+
+        fputs(line, temp_file); // Write lines of other messages to temp file
+    }
+
+    fclose(inbox_file);
+    fclose(temp_file);
+
+    if (!found) {
+        printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
+        remove(buffer); // Delete temp file
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    // 6. Replace Original File with Temp File
+    if (rename(buffer, user_inbox_path) != 0) {
+        perror("DEBUG: Failed to replace inbox file");
+        send(client_socket, "ERR\n", 4, 0);
+        return;
+    }
+
+    printf("DEBUG: Message number %d deleted successfully for user %s.\n", message_number, username);
+    send(client_socket, "OK\n", 3, 0);
+    printf("DEBUG: Sent 'OK' response to client.\n");
 }
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
@@ -344,6 +431,10 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             // Process the READ command
             printf("Receive READ command\r\n");
             handleReadCommand(client_socket, mail_spool_dir);
+        } else if (strncmp(buffer, "DEL", 3) == 0) {
+            // Process the DEL command
+            printf("Receive DEL command\n");
+            handleDelCommand(client_socket, mail_spool_dir);
         } else {
             // Unknown command
             send(client_socket, "Unknown command\n", 25, 0);
