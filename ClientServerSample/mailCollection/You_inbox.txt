@@ -8,7 +8,7 @@ message
 
 ---
 From: me
-To: you
+To: You
 Subject: hu
 huhu
 
