@@ -186,8 +186,14 @@ void handleReadCommand(int create_socket) {
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0';
-        if (strncmp(buffer, "OK", 2) == 0 || strncmp(buffer, "ERR", 3) == 0) {
-            printf("<< %s\n", buffer);
+        if (strncmp(buffer, "ERR", 3) == 0) {
+            char *error_msg = strchr(buffer, '\n'); // Locate the additional error message
+            printf("<< ERR\n");
+            if (error_msg) {
+                printf("<< %s\n", error_msg + 1); // Print additional error message
+            }
+        } else if (strncmp(buffer, "OK", 2) == 0) {
+            printf("<< OK\n%s\n", buffer + 3);
         } else {
             printf("%s\n", buffer);
         }
@@ -196,7 +202,6 @@ void handleReadCommand(int create_socket) {
     } else {
         perror("recv error");
     }
-
 }
 
 void handleDelCommand(int create_socket) {
@@ -224,7 +229,7 @@ void handleDelCommand(int create_socket) {
 
     // Ask and validate message number
     while (1) {
-        printf(">> Message Number: ");
+        printf(">> Message number: ");
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
             if (buffer[len - 1] == '\n') buffer[--len] = '\0';
@@ -243,7 +248,23 @@ void handleDelCommand(int create_socket) {
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0'; // Terminate string
-        printf("<< %s\n", buffer);
+
+        // Error and success messages
+        if (strncmp(buffer, "ERR", 3) == 0) {
+            char *error_msg = strchr(buffer, '\n'); 
+            printf("<< ERR\n");
+            if (error_msg) {
+                printf("<< %s\n", error_msg + 1); 
+            }
+        } else if (strncmp(buffer, "OK", 2) == 0) {
+            char *success_msg = strchr(buffer, '\n'); 
+            printf("<< OK\n");
+            if (success_msg) {
+                printf("<< %s\n", success_msg + 1); 
+            }
+        } else {
+            printf("<< %s\n", buffer); 
+        }
     } else if (size == 0) {
         printf("Server closed remote socket\n");
     } else {
