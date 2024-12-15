@@ -429,31 +429,31 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         buffer[size] = '\0'; // Null-terminate the string
         printf("\nReceived from client: %s\n", buffer); // Print received data
         
-        // Check command type
-        if (strncmp(buffer, "SEND", 4) == 0) {
+        // Check command type (exact matching with strcmp)
+        if (strcmp(buffer, "SEND") == 0) {
             // Process the SEND command
             printf("Receive SEND command\r\n");
             handleSendCommand(client_socket, mail_spool_dir);
         } else if (strcmp(buffer, "QUIT") == 0) {
             // Process the QUIT command (client disconnect)
             break;
-        } else if (strncmp(buffer, "LIST", 4) == 0) {
+        } else if (strcmp(buffer, "LIST") == 0) {
             // Process the LIST command
             printf("Receive LIST command\r\n");
             handleListCommand(client_socket, mail_spool_dir);
-        } else if (strncmp(buffer, "READ", 4) == 0) {
+        } else if (strcmp(buffer, "READ") == 0) {
             // Process the READ command
             printf("Receive READ command\r\n");
             handleReadCommand(client_socket, mail_spool_dir);
-        } else if (strncmp(buffer, "DEL", 3) == 0) {
+        } else if (strcmp(buffer, "DEL") == 0) {
             // Process the DEL command
             printf("Receive DEL command\n");
             handleDelCommand(client_socket, mail_spool_dir);
         } else {
             // Unknown command
-            send(client_socket, "Unknown command\n", 25, 0);
-        }  
-
+            printf("Unknown command received: %s\n", buffer);
+            send(client_socket, "Unknown command\n", 16, 0);
+        }
     }
 
     close(client_socket); // Close client socket
