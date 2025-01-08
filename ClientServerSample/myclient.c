@@ -19,6 +19,9 @@ char *handleLoginCommand(int create_socket) {
     char password[256];
     int size;
 
+    // Send "LOGIN" command to the server
+    sendMessage(create_socket, "LOGIN");
+
     // Prompt for username
     printf(">> LDAP Username: ");
     if (fgets(username, 256, stdin) == NULL) {
@@ -31,31 +34,44 @@ char *handleLoginCommand(int create_socket) {
         username[--size] = '\0'; // Remove newline
     }
 
-    printf("Username %s", username);
+    printf("Sent username: %s \n", username);
 
     // Prompt for password (hides input)
     printf(">> LDAP Password: ");
+    fflush(stdout); // Ensure the prompt is displayed immediately
+
     struct termios oldt, newt;
     tcgetattr(STDIN_FILENO, &oldt); // Get current terminal attributes
     newt = oldt;
     newt.c_lflag &= ~(ECHO);        // Disable echo
     tcsetattr(STDIN_FILENO, TCSANOW, &newt); // Apply changes
-    if (fgets(password, sizeof(password), stdin) == NULL) {
-        perror("Error reading password");
-        tcsetattr(STDIN_FILENO, TCSANOW, &oldt); // Restore terminal attributes
-        return NULL; // Login failed
-    }
+
+    // Use read for raw input
+    ssize_t len = read(STDIN_FILENO, password, sizeof(password) - 1);
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt); // Restore terminal attributes
-    printf("\n");
+    printf("\n"); // Add a newline for user feedback
 
-    size = strlen(password);
-    if (password[size - 1] == '\n') {
-        password[--size] = '\0'; // Remove newline
+    if (len < 0) {
+    perror("Error reading password");
+    return NULL; // Login failed
     }
 
-    // Send LOGIN command to the server
-    snprintf(buffer, sizeof(buffer), "LOGIN\n%s\n%s\n", username, password);
+    // Null-terminate the password and strip newline
+    password[len] = '\0';
+    char *newline = strchr(password, '\n');
+    if (newline) {
+    *newline = '\0';
+    }
+
+    printf("Password successfully read\n");
+
+    
+
+    // Send username and password to server
+    snprintf(buffer, sizeof(buffer), "%s\n%s\n", username, password);
     sendMessage(create_socket, buffer);
+
+printf("Sent Password %s", password);
 
     // Wait for server response
     size = recv(create_socket, buffer, BUF - 1, 0);
