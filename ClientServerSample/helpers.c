@@ -80,77 +80,10 @@ void handleLdapLogin(int client_socket) {
         return;
     }
 
-
-    // Initialize LDAP connection
-    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
-    const int ldapVersion = LDAP_VERSION3;
-    LDAP *ldapHandle = initialize_ldap(ldapUri, ldapVersion);
-
-    if (!ldapHandle) {
-        printf("Unable to connect to LDAP server\n");
-        send(client_socket, "ERR Unable to connect to LDAP server\n", 37, 0);
-        return;
-    }
-
     // Search for the DN using the username
-    const char *base = "dc=technikum-wien,dc=at"; // Updated search base
-    char filter[300];
-    snprintf(filter, sizeof(filter), "(mail=%s)", username); 
-
-    LDAPMessage *result = NULL;
-    int rc = ldap_search_ext_s(
-        ldapHandle,
-        base,
-        LDAP_SCOPE_SUBTREE,
-        filter,
-        NULL, // Retrieve all attributes
-        0,
-        NULL,
-        NULL,
-        NULL,
-        LDAP_NO_LIMIT,
-        &result
-    );
-
-    if (rc != LDAP_SUCCESS) {
-        fprintf(stderr, "LDAP search error: %s\n", ldap_err2string(rc));
-        send(client_socket, "ERR Unable to find user\n", 25, 0);
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return;
-    }
-
-    LDAPMessage *entry = ldap_first_entry(ldapHandle, result);
-    if (!entry) {
-        printf("User not found: %s\n", username);
-        send(client_socket, "ERR User not found\n", 20, 0);
-        ldap_msgfree(result);
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return;
-    }
-
-    char *dn = ldap_get_dn(ldapHandle, entry);
-    if (!dn) {
-        printf("Failed to retrieve DN for user: %s\n", username);
-        send(client_socket, "ERR Failed to retrieve user DN\n", 31, 0);
-        ldap_msgfree(result);
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return;
-    }
-
-    printf("DN found: %s\n", dn);
-
-    // Authenticate the user using the retrieved DN
-    int authResult = authenticate_ldap_user(ldapHandle, dn, password);
-    ldap_memfree(dn);
-    ldap_msgfree(result);
-    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-
-    if (authResult == 0) {
-        send(client_socket, "OK\n", 3, 0); // Authentication successful
-    } else {
-        printf("Invalid credentials for user: %s\n", username);
-        send(client_socket, "ERR Invalid credentials\n", 24, 0);
-    }
+    char *retrievedUsername = ldapFind(username, password);
+    printf("Retrieved Username: %s", retrievedUsername);
+    send(client_socket, retrievedUsername, 256, 0);
 }
 
 
