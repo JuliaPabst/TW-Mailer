@@ -71,7 +71,7 @@ void handleLdapLogin(int client_socket) {
     username[size] = '\0';
 
     // Validate username
-    if (strlen(username) > 8 || strpbrk(username, " \t\n") != NULL) {
+    if (strlen(username) > 100 || strpbrk(username, " \t\n") != NULL) {
         send(client_socket, "ERR Invalid username format\n", 28, 0);
         return;
     }
@@ -90,6 +90,7 @@ void handleLdapLogin(int client_socket) {
     LDAP *ldapHandle = initialize_ldap(ldapUri, ldapVersion);
 
     if (!ldapHandle) {
+        printf("Unable to connect to LDAP server\n");
         send(client_socket, "ERR Unable to connect to LDAP server\n", 37, 0);
         return;
     }
@@ -479,7 +480,11 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         printf("\nReceived from client: %s\n", buffer); // Print received data
         
         // Check command type (exact matching with strcmp)
-        if (strcmp(buffer, "SEND") == 0) {
+        if (strcmp(buffer, "LOGIN") == 0) {
+            // Process the LOGIN command
+            printf("Receive LOGIN command\r\n");
+            handleLdapLogin(client_socket);
+        } else if (strcmp(buffer, "SEND") == 0) {
             // Process the SEND command
             printf("Receive SEND command\r\n");
             handleSendCommand(client_socket, mail_spool_dir);

@@ -15,20 +15,23 @@ int isValidInput(const char *input, int maxLength) {
 
 char *handleLoginCommand(int create_socket) {
     char buffer[BUF];
-    char *username = malloc(256); 
+    char *username = malloc(sizeof(char)*256); 
     char password[256];
     int size;
 
     // Prompt for username
     printf(">> LDAP Username: ");
-    if (fgets(username, sizeof(username), stdin) == NULL) {
+    if (fgets(username, 256, stdin) == NULL) {
         perror("Error reading username");
         return NULL; // Login failed
     }
+
     size = strlen(username);
     if (username[size - 1] == '\n') {
         username[--size] = '\0'; // Remove newline
     }
+
+    printf("Username %s", username);
 
     // Prompt for password (hides input)
     printf(">> LDAP Password: ");
