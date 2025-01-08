@@ -13,7 +13,68 @@ int isValidInput(const char *input, int maxLength) {
     return len > 0 && len <= maxLength;
 }
 
-void handleSendCommand(int create_socket) {
+char *handleLoginCommand(int create_socket) {
+    char buffer[BUF];
+    char username[256];
+    char password[256];
+    int size;
+
+    // Prompt for username
+    printf(">> LDAP Username: ");
+    if (fgets(username, sizeof(username), stdin) == NULL) {
+        perror("Error reading username");
+        return NULL; // Login failed
+    }
+    size = strlen(username);
+    if (username[size - 1] == '\n') {
+        username[--size] = '\0'; // Remove newline
+    }
+
+    // Prompt for password (hides input)
+    printf(">> LDAP Password: ");
+    struct termios oldt, newt;
+    tcgetattr(STDIN_FILENO, &oldt); // Get current terminal attributes
+    newt = oldt;
+    newt.c_lflag &= ~(ECHO);        // Disable echo
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt); // Apply changes
+    if (fgets(password, sizeof(password), stdin) == NULL) {
+        perror("Error reading password");
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldt); // Restore terminal attributes
+        return NULL; // Login failed
+    }
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt); // Restore terminal attributes
+    printf("\n");
+
+    size = strlen(password);
+    if (password[size - 1] == '\n') {
+        password[--size] = '\0'; // Remove newline
+    }
+
+    // Send LOGIN command to the server
+    snprintf(buffer, sizeof(buffer), "LOGIN\n%s\n%s\n", username, password);
+    sendMessage(create_socket, buffer);
+
+    // Wait for server response
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (size > 0) {
+        buffer[size] = '\0'; // Null-terminate server response
+        if (strncmp(buffer, "OK", 2) == 0) {
+            printf("<< Login successful!\n");
+            return username; // Login successful
+        } else if (strncmp(buffer, "ERR", 3) == 0) {
+            printf("<< Login failed: %s\n", buffer + 4); // Print error details if provided
+            return NULL; // Login failed
+        } else {
+            printf("<< Unexpected server response: %s\n", buffer);
+            return NULL; // Login failed
+        }
+    } else {
+        perror("recv error");
+        return NULL; // Login failed
+    }
+}
+
+void handleSendCommand(int create_socket, char *username) {
     char buffer[BUF];
     int size;
 
@@ -76,7 +137,7 @@ void handleSendCommand(int create_socket) {
     }
 }
 
-void handleListCommand(int create_socket) {
+void handleListCommand(int create_socket, char *username) {
     char buffer[BUF];
     int size;
 
@@ -133,7 +194,7 @@ void handleListCommand(int create_socket) {
     }
 }
 
-void handleReadCommand(int create_socket) {
+void handleReadCommand(int create_socket, char *username) {
     char buffer[BUF];
     int size;
 
@@ -196,7 +257,7 @@ void handleReadCommand(int create_socket) {
     }
 }
 
-void handleDelCommand(int create_socket) {
+void handleDelCommand(int create_socket, char *username) {
     char buffer[BUF];
     int size;
 
@@ -270,6 +331,7 @@ int main(int argc, char **argv) {
     struct sockaddr_in address;
     int size;
     int isQuit;
+    char *username = NULL;
 
     ////////////////////////////////////////////////////////////////////////////
     // Check Command-Line Arguments
@@ -334,10 +396,19 @@ int main(int argc, char **argv) {
                 buffer[--size] = '\0';
             }
 
-            if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0) {
+            if(username == NULL && (strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0)){
+                printf("You need to login first! Use the command LOGIN!");
+                continue;
+            }
+
+            if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
+                // Handle "LOGIN" command
+                if (strcmp(buffer, "SEND") == 0) {
+                    username = handleLoginCommand(create_socket);
+                }
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
-                    handleSendCommand(create_socket);
+                    handleSendCommand(create_socket, username);
 
                     // Receive server response
                     size = recv(create_socket, buffer, BUF - 1, 0);
@@ -352,11 +423,11 @@ int main(int argc, char **argv) {
                         printf("<< %s\n", buffer);
                     }
                 } else if (strcmp(buffer, "LIST") == 0) {
-                    handleListCommand(create_socket);
+                    handleListCommand(create_socket, username);
                 } else if (strcmp(buffer, "READ") == 0) {
-                    handleReadCommand(create_socket);
+                    handleReadCommand(create_socket, username);
                 } else if (strcmp(buffer, "DEL") == 0) {
-                    handleDelCommand(create_socket);
+                    handleDelCommand(create_socket, username);
                 }
 
                 memset(buffer, 0, sizeof(buffer)); // Clear buffer                

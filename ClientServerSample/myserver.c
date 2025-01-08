@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include "helpers.h"
+#include "ldap_functions.h"
 
 int abortRequested = 0;
 int create_socket = -1;

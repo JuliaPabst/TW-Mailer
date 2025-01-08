@@ -7,6 +7,7 @@
 #include "helpers.h"
 #include <dirent.h>
 #include <errno.h>
+#include "ldap_functions.h"
 
 void signalHandler(int sig) {
     // Suppress unused parameter warning
@@ -54,6 +55,54 @@ int isValidUsername(const char *username) {
         if (!isalnum(username[i])) return 0;
     }
     return 1;
+}
+
+void handleLdapLogin(int client_socket) {
+    char username[256];
+    char password[256];
+    int size;
+
+    // Read username from client
+    size = recv(client_socket, username, sizeof(username) - 1, 0);
+    if (size <= 0) {
+        send(client_socket, "ERR Invalid username\n", 21, 0);
+        return;
+    }
+    username[size] = '\0';
+
+    // Validate username
+    if (strlen(username) > 8 || strpbrk(username, " \t\n") != NULL) {
+        send(client_socket, "ERR Invalid username format\n", 28, 0);
+        return;
+    }
+
+    // Read password from client
+    size = recv(client_socket, password, sizeof(password) - 1, 0);
+    if (size <= 0) {
+        send(client_socket, "ERR Invalid password\n", 21, 0);
+        return;
+    }
+    password[size] = '\0';
+
+    // Initialize LDAP connection
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const int ldapVersion = LDAP_VERSION3;
+    LDAP *ldapHandle = initialize_ldap(ldapUri, ldapVersion);
+
+    if (!ldapHandle) {
+        send(client_socket, "ERR Unable to connect to LDAP server\n", 37, 0);
+        return;
+    }
+
+    // Authenticate user with LDAP
+    int authResult = authenticate_ldap_user(ldapHandle, username, password);
+    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+
+    if (authResult == 0) {
+        send(client_socket, "OK\n", 3, 0); // Authentication successful
+    } else {
+        send(client_socket, "ERR Invalid credentials\n", 24, 0);
+    }
 }
 
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
