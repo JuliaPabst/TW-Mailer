@@ -36,6 +36,8 @@ int authenticate_ldap_user(LDAP *ldapHandle, const char *username, const char *p
 
 int perform_ldap_search(LDAP *ldapHandle, const char *base, const char *filter) {
     LDAPMessage *result;
+    printf("base: %s", base);
+    printf("Filter %s", filter);
     int rc = ldap_search_ext_s(
         ldapHandle,
         base,

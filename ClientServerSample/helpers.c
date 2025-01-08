@@ -58,40 +58,28 @@ int isValidUsername(const char *username) {
 }
 
 void handleLdapLogin(int client_socket) {
-    char username[256];
-    char password[256];
     int size;
 
     printf("Starting to log in\n");
 
-    // Read username from client
-    size = recv(client_socket, username, 256, 0);
+    char credentials[512]; // Buffer for combined username and password
+    size = recv(client_socket, credentials, sizeof(credentials) - 1, 0);
     if (size <= 0) {
-        send(client_socket, "ERR Invalid username\n", 21, 0);
+        send(client_socket, "ERR Invalid credentials\n", 24, 0);
         return;
     }
-    username[size] = '\0';
+    credentials[size] = '\0';
 
-    // Remove trailing newline or carriage return characters
-    char *newline = strpbrk(username, "\r\n");
-    if (newline) {
-        *newline = '\0'; // Replace it with null terminator
-    }
+    // Split username and password
+    char *username = strtok(credentials, "\n");
+    char *password = strtok(NULL, "\n");
 
-    printf("Username read: %s\n", username);
-
-    // Read password from client
-    size = recv(client_socket, password, 256, 0);
-    if (size <= 0) {
-        printf("ERR Invalid password\n");
-        send(client_socket, "ERR Invalid password\n", 21, 0);
+    if (!username || !password) {
+        printf("ERR Missing username or password\n");
+        send(client_socket, "ERR Missing username or password\n", 34, 0);
         return;
     }
-    password[size] = '\0';
 
-    printf("Password read: %s\n", password);
-
-    printf("Password read and validated\n");
 
     // Initialize LDAP connection
     const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
@@ -107,7 +95,7 @@ void handleLdapLogin(int client_socket) {
     // Search for the DN using the username
     const char *base = "dc=technikum-wien,dc=at"; // Updated search base
     char filter[300];
-    snprintf(filter, sizeof(filter), "(uid=%s)", username); // Adjust if "uid" is not the correct attribute
+    snprintf(filter, sizeof(filter), "(mail=%s)", username); 
 
     LDAPMessage *result = NULL;
     int rc = ldap_search_ext_s(
