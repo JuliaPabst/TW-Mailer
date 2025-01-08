@@ -15,7 +15,7 @@ int isValidInput(const char *input, int maxLength) {
 
 char *handleLoginCommand(int create_socket) {
     char buffer[BUF];
-    char username[256];
+    char *username = malloc(256); 
     char password[256];
     int size;
 
@@ -81,11 +81,21 @@ void handleSendCommand(int create_socket, char *username) {
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
 
+    // Send the username as the sender
+    if (isValidInput(username, 8)) {
+        printf("Sender: %s", username);
+        sendMessage(create_socket, username); // Send username as the sender
+    } else {
+        printf("Invalid username passed as sender!\n");
+        sendMessage(create_socket, "ERR"); // Notify server of an error
+        return;
+    }
+
     // Collect sender, receiver, subject, and message
-    const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
+    const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
     int maxLengths[] = {8, 8, 80, BUF - 1};
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
         while (1) { // Retry loop for invalid input
             memset(buffer, 0, sizeof(buffer)); // Clear the buffer
             printf(">> %s: ", prompts[i]);
@@ -144,22 +154,14 @@ void handleListCommand(int create_socket, char *username) {
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
 
-    // Prompt user for username until a valid one is provided
-    while (1) { 
-        printf(">> Username (max 8 chars): ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
-            size_t len = strlen(buffer);
-            if (buffer[len - 1] == '\n') buffer[--len] = '\0'; // Remove newline
-
-            // Check if username is valid
-            if (!isValidInput(buffer, 8)) {
-                printf("Invalid username! Try again.\n");
-                continue;
-            }
-
-            sendMessage(create_socket, buffer);
-            break;
-        }
+    // Send the username  
+    if (isValidInput(username, 8)) {
+        printf("Username: %s", username);
+        sendMessage(create_socket, username); // Send username as the sender
+    } else {
+        printf("Invalid username passed as sender!\n");
+        sendMessage(create_socket, "ERR"); // Notify server of an error
+        return;
     }
 
     // Receive response from the server
@@ -201,21 +203,14 @@ void handleReadCommand(int create_socket, char *username) {
     // Send "READ" command to the server
     sendMessage(create_socket, "READ");
 
-    // Prompt for username
-    while (1) {
-        printf(">> Username (max 8 chars): ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
-            size_t len = strlen(buffer);
-            if (buffer[len - 1] == '\n') buffer[--len] = '\0';
-
-            if (!isValidInput(buffer, 8)) {
-                printf("Invalid username! Try again.\n");
-                continue;
-            }
-
-            sendMessage(create_socket, buffer);
-            break;
-        }
+    // Send the username
+    if (isValidInput(username, 8)) {
+        printf("Sender: %s", username);
+        sendMessage(create_socket, username); // Send username as the sender
+    } else {
+        printf("Invalid username passed as sender!\n");
+        sendMessage(create_socket, "ERR"); // Notify server of an error
+        return;
     }
 
     // Prompt for message number
@@ -263,21 +258,14 @@ void handleDelCommand(int create_socket, char *username) {
 
     sendMessage(create_socket, "DEL");
 
-    // Ask for username and validate it
-    while (1) {
-        printf(">> Username (max 8 chars): ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
-            size_t len = strlen(buffer);
-            if (buffer[len - 1] == '\n') buffer[--len] = '\0'; // remove newline
-
-            if (!isValidInput(buffer, 8)) {
-                printf("Invalid username! Try again.\n");
-                continue;
-            }
-
-            sendMessage(create_socket, buffer); // Send the username to the server
-            break;
-        }
+   // Send the username as the sender
+    if (isValidInput(username, 8)) {
+        printf("Sender: %s", username);
+        sendMessage(create_socket, username); // Send username as the sender
+    } else {
+        printf("Invalid username passed as sender!\n");
+        sendMessage(create_socket, "ERR"); // Notify server of an error
+        return;
     }
 
     // Ask and validate message number
@@ -361,10 +349,10 @@ int main(int argc, char **argv) {
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
 
-    if (inet_aton(ip, &address.sin_addr) == 0) {
-        fprintf(stderr, "Invalid IP address: %s\n", ip);
-        return EXIT_FAILURE;
-    }
+   if (inet_pton(AF_INET, ip, &address.sin_addr) <= 0) {
+    fprintf(stderr, "Invalid IP address: %s\n", ip);
+    return EXIT_FAILURE;
+}
 
     ////////////////////////////////////////////////////////////////////////////
     // CREATE A CONNECTION
@@ -397,13 +385,13 @@ int main(int argc, char **argv) {
             }
 
             if(username == NULL && (strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0)){
-                printf("You need to login first! Use the command LOGIN!");
+                printf("You need to login first! Use the command LOGIN!\n");
                 continue;
             }
 
             if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
                 // Handle "LOGIN" command
-                if (strcmp(buffer, "SEND") == 0) {
+                if (strcmp(buffer, "LOGIN") == 0) {
                     username = handleLoginCommand(create_socket);
                 }
                 // Handle "SEND" command
@@ -435,6 +423,7 @@ int main(int argc, char **argv) {
             }
 
             isQuit = strcmp(buffer, "QUIT") == 0;
+            free(username);
 
             // Send other commands to the server
             sendMessage(create_socket, buffer);
