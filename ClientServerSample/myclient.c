@@ -81,28 +81,18 @@ char *handleLoginCommand(int create_socket) {
     }
 }
 
-void handleSendCommand(int create_socket, char *username) {
+void handleSendCommand(int create_socket, char *user) {
     char buffer[BUF];
     int size;
 
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
 
-    // Send the username as the sender
-    if (isValidInput(username, 8)) {
-        printf("Sender: %s\n", username);
-        sendMessage(create_socket, username); // Send username as the sender
-    } else {
-        printf("Invalid username passed as sender!\n");
-        sendMessage(create_socket, "ERR"); // Notify server of an error
-        return;
-    }
-
     // Collect sender, receiver, subject, and message
-    const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
+    const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
     int maxLengths[] = {8, 8, 80, BUF - 1};
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         while (1) { // Retry loop for invalid input
             memset(buffer, 0, sizeof(buffer)); // Clear the buffer
             printf(">> %s: ", prompts[i]);
@@ -117,23 +107,26 @@ void handleSendCommand(int create_socket, char *username) {
                     continue; // Retry current prompt
                 }
 
-                 // Collect the multi-line message
-            if (i == 3) { // Multi-line input for "Message"
-                printf(">> Message (end with a single line containing '.'): \n");
-                while (1) {
-                    memset(buffer, 0, sizeof(buffer)); // Clear buffer
-                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                        size = strlen(buffer);
-                        if (buffer[size - 1] == '\n') {
-                            buffer[--size] = '\0'; // Remove newline
-                        }
-                        sendMessage(create_socket, buffer); // Send the message line
-                        if (strcmp(buffer, ".") == 0) { // End of message
-                            break;
+                if (i == 3) { // Multi-line input for "Message"
+                    // Send the first line of the message
+                    sendMessage(create_socket, buffer);
+
+                    while (1) {
+                        printf(">> ");
+                        memset(buffer, 0, sizeof(buffer)); // Clear buffer
+                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                            size = strlen(buffer);
+                            if (buffer[size - 1] == '\n') {
+                                buffer[--size] = '\0';
+                            }
+                            sendMessage(create_socket, buffer); // Send every line, including empty ones
+                            if (strcmp(buffer, ".") == 0) { // End of message
+                                break;
+                            }
                         }
                     }
-                }
-            } else {
+                    break;
+                } else {
                     sendMessage(create_socket, buffer);
                     break;
                 }
@@ -388,7 +381,7 @@ int main(int argc, char **argv) {
                 buffer[--size] = '\0';
             }
 
-            if(username == NULL && (strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0)){
+            if((username == NULL || strcmp(username, "FAILED") == 0) && (strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0)){
                 printf("You need to login first! Use the command LOGIN!\n");
                 continue;
             }
@@ -396,15 +389,11 @@ int main(int argc, char **argv) {
             if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
                 // Handle "LOGIN" command
                 if (strcmp(buffer, "LOGIN") == 0) {
-                    char *usernameCheck =  handleLoginCommand(create_socket);
-                    if (strcmp(usernameCheck, "FAILED") == 1){
-                       username = usernameCheck;
-                    }
-                    
+                    username = handleLoginCommand(create_socket);
                 }
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
-                    handleSendCommand(create_socket, username);
+                    handleSendCommand(create_socket, char *user);
 
                     // Receive server response
                     size = recv(create_socket, buffer, BUF - 1, 0);

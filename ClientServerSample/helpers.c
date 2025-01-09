@@ -92,8 +92,10 @@ void handleLdapLogin(int client_socket) {
     // Send the formatted message to the client
     send(client_socket, retrievedUsername, strlen(retrievedUsername), 0);
 
+    printf("DEBUG");
     // Free the memory allocated by ldapFind if necessary
     if(retrievedUsername != NULL){
+         printf("DEBUG!");
         free(retrievedUsername);
     }
 }

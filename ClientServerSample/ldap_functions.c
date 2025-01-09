@@ -125,7 +125,9 @@ char *ldapFind(char* username, char* password)
    if (rc != LDAP_SUCCESS)
    {
       fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
+      if(ldapHandle != NULL){
       ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+      }
       return "FAILED";
    }
 

@@ -19,7 +19,7 @@
 void sendMessage(int socket, const char *message);
 int isValidInput(const char *input, int maxLength);
 char *handleLoginCommand(int create_socket);
-void handleSendCommand(int create_socket, char *username);
+void handleSendCommand(int create_socket, char *user);
 void handleListCommand(int create_socket,char *username);
 void handleReadCommand(int create_socket, char *username);
 void handleDelCommand(int create_socket, char *username);
