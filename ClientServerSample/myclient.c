@@ -87,12 +87,14 @@ void handleSendCommand(int create_socket, char *user) {
 
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
+    // send sender
+    sendMessage(create_socket, user);
 
     // Collect sender, receiver, subject, and message
-    const char *prompts[] = {"Sender (max 8 chars)", "Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
+    const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
     int maxLengths[] = {8, 8, 80, BUF - 1};
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
         while (1) { // Retry loop for invalid input
             memset(buffer, 0, sizeof(buffer)); // Clear the buffer
             printf(">> %s: ", prompts[i]);
@@ -151,15 +153,8 @@ void handleListCommand(int create_socket, char *username) {
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
 
-    // Send the username  
-    if (isValidInput(username, 8)) {
-        printf("Username: %s", username);
-        sendMessage(create_socket, username); // Send username as the sender
-    } else {
-        printf("Invalid username passed as sender!\n");
-        sendMessage(create_socket, "ERR"); // Notify server of an error
-        return;
-    }
+    // Send username to server
+    sendMessage(create_socket, username);
 
     // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
@@ -393,7 +388,7 @@ int main(int argc, char **argv) {
                 }
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
-                    handleSendCommand(create_socket, char *user);
+                    handleSendCommand(create_socket, username);
 
                     // Receive server response
                     size = recv(create_socket, buffer, BUF - 1, 0);

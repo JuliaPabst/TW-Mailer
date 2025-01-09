@@ -100,7 +100,6 @@ void handleLdapLogin(int client_socket) {
     }
 }
 
-
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     char sender[81], receiver[81], subject[81], message[BUF];
     char buffer[BUF];
@@ -183,6 +182,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     send(client_socket, "OK\n", 3, 0);
     printf("DEBUG: Sent 'OK' response to client.\n");
 }
+
 
 void handleListCommand(int client_socket, const char *mail_spool_dir) {
     char username[81];
