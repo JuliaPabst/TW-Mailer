@@ -34,6 +34,7 @@ char *handleLoginCommand(int create_socket) {
         username[--size] = '\0'; // Remove newline
     }
 
+    sendMessage(create_socket, username);
     printf("Sent username: %s \n", username);
 
     // Prompt for password (hides input)
@@ -63,33 +64,20 @@ char *handleLoginCommand(int create_socket) {
     *newline = '\0';
     }
 
-    printf("Password successfully read\n");
-
     
-
-    // Send username and password to server
-    snprintf(buffer, sizeof(buffer), "%s\n%s\n", username, password);
-    sendMessage(create_socket, buffer);
-
-printf("Sent Password %s", password);
+    sendMessage(create_socket, password);
+    printf("Sent username: %s \n", username);
+    printf("Password successfully read\n");
 
     // Wait for server response
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
-        buffer[size] = '\0'; // Null-terminate server response
-        if (strncmp(buffer, "OK", 2) == 0) {
-            printf("<< Login successful!\n");
-            return username; // Login successful
-        } else if (strncmp(buffer, "ERR", 3) == 0) {
-            printf("<< Login failed: %s\n", buffer + 4); // Print error details if provided
-            return NULL; // Login failed
-        } else {
-            printf("<< Unexpected server response: %s\n", buffer);
-            return NULL; // Login failed
-        }
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Print server response
+        return username; 
     } else {
         perror("recv error");
-        return NULL; // Login failed
+        return NULL;
     }
 }
 
@@ -102,7 +90,7 @@ void handleSendCommand(int create_socket, char *username) {
 
     // Send the username as the sender
     if (isValidInput(username, 8)) {
-        printf("Sender: %s", username);
+        printf("Sender: %s\n", username);
         sendMessage(create_socket, username); // Send username as the sender
     } else {
         printf("Invalid username passed as sender!\n");
@@ -129,26 +117,23 @@ void handleSendCommand(int create_socket, char *username) {
                     continue; // Retry current prompt
                 }
 
-                if (i == 3) { // Multi-line input for "Message"
-                    // Send the first line of the message
-                    sendMessage(create_socket, buffer);
-
-                    while (1) {
-                        printf(">> ");
-                        memset(buffer, 0, sizeof(buffer)); // Clear buffer
-                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
-                            size = strlen(buffer);
-                            if (buffer[size - 1] == '\n') {
-                                buffer[--size] = '\0';
-                            }
-                            sendMessage(create_socket, buffer); // Send every line, including empty ones
-                            if (strcmp(buffer, ".") == 0) { // End of message
-                                break;
-                            }
+                 // Collect the multi-line message
+            if (i == 3) { // Multi-line input for "Message"
+                printf(">> Message (end with a single line containing '.'): \n");
+                while (1) {
+                    memset(buffer, 0, sizeof(buffer)); // Clear buffer
+                    if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                        size = strlen(buffer);
+                        if (buffer[size - 1] == '\n') {
+                            buffer[--size] = '\0'; // Remove newline
+                        }
+                        sendMessage(create_socket, buffer); // Send the message line
+                        if (strcmp(buffer, ".") == 0) { // End of message
+                            break;
                         }
                     }
-                    break;
-                } else {
+                }
+            } else {
                     sendMessage(create_socket, buffer);
                     break;
                 }
@@ -411,7 +396,11 @@ int main(int argc, char **argv) {
             if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
                 // Handle "LOGIN" command
                 if (strcmp(buffer, "LOGIN") == 0) {
-                    username = handleLoginCommand(create_socket);
+                    char *usernameCheck =  handleLoginCommand(create_socket);
+                    if (strcmp(usernameCheck, "FAILED") == 1){
+                       username = usernameCheck;
+                    }
+                    
                 }
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
@@ -442,8 +431,10 @@ int main(int argc, char **argv) {
             }
 
             isQuit = strcmp(buffer, "QUIT") == 0;
-            free(username);
-
+            if(username != NULL){
+                free(username);
+            }
+            
             // Send other commands to the server
             sendMessage(create_socket, buffer);
 

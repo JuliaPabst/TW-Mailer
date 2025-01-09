@@ -62,28 +62,40 @@ void handleLdapLogin(int client_socket) {
 
     printf("Starting to log in\n");
 
-    char credentials[512]; // Buffer for combined username and password
-    size = recv(client_socket, credentials, sizeof(credentials) - 1, 0);
+    char username[256];
+    size = recv(client_socket, username, sizeof(username) - 1, 0);
     if (size <= 0) {
-        send(client_socket, "ERR Invalid credentials\n", 24, 0);
+        send(client_socket, "ERR Invalid Username\n", 24, 0);
         return;
     }
-    credentials[size] = '\0';
+    printf("Username: %s", username);
 
-    // Split username and password
-    char *username = strtok(credentials, "\n");
-    char *password = strtok(NULL, "\n");
-
-    if (!username || !password) {
-        printf("ERR Missing username or password\n");
-        send(client_socket, "ERR Missing username or password\n", 34, 0);
+    char password[256];
+    size = recv(client_socket, password, sizeof(password) - 1, 0);
+    if (size <= 0) {
+        send(client_socket, "ERR Invalid password\n", 24, 0);
         return;
     }
+    printf("password: %s", password);
 
     // Search for the DN using the username
     char *retrievedUsername = ldapFind(username, password);
-    printf("Retrieved Username: %s", retrievedUsername);
-    send(client_socket, retrievedUsername, 256, 0);
+    if (!retrievedUsername) {
+        fprintf(stderr, "Failed to retrieve username\n");
+        send(client_socket, "ERR Unable to retrieve username\n", 32, 0);
+        return;
+    }
+
+    // Print the retrieved username for debugging
+    printf("Retrieved Username: %s\n", retrievedUsername);
+
+    // Send the formatted message to the client
+    send(client_socket, retrievedUsername, strlen(retrievedUsername), 0);
+
+    // Free the memory allocated by ldapFind if necessary
+    if(retrievedUsername != NULL){
+        free(retrievedUsername);
+    }
 }
 
 

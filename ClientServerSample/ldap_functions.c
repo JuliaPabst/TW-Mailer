@@ -4,6 +4,19 @@
 #include <ldap.h>
 #include "mypw.h"
 
+char *my_strdup(const char *src) {
+    if (!src) {
+        return "FAILED";
+    }
+    size_t len = strlen(src) + 1;
+    char *dup = malloc(len);
+    if (dup) {
+        memcpy(dup, src, len);
+    }
+    return dup;
+}
+
+
 char *ldapFind(char* username, char* password)
 {
    ////////////////////////////////////////////////////////////////////////////
@@ -11,6 +24,7 @@ char *ldapFind(char* username, char* password)
    // anonymous bind with user and pw empty
    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
    const int ldapVersion = LDAP_VERSION3;
+   char *foundUid = NULL;
 
    // read username (bash: export ldapuser=<yourUsername>)
    // Construct the bind DN using the username
@@ -189,11 +203,29 @@ char *ldapFind(char* username, char* password)
             {
                printf("\t%s: %s\n", searchResultEntryAttribute, vals[i]->bv_val);
             }
-            ldap_value_free_len(vals);
+
+            if(vals != NULL){
+                ldap_value_free_len(vals);
+            }
          }
 
+            if (searchResultEntry) {
+                BerValue **vals = ldap_get_values_len(ldapHandle, searchResultEntry, "uid");
+                if (vals) {
+                    foundUid = my_strdup(vals[0]->bv_val); // Copy the UID for return
+                    if(vals != NULL){
+                        ldap_value_free_len(vals);
+                    }
+                    
+                }
+            }
+
+        printf("SearchResultentry: %s", foundUid);
+
          // free memory
+         if(searchResultEntryAttribute != NULL){
          ldap_memfree(searchResultEntryAttribute);
+         }
       }
       // free memory
       if (ber != NULL)
@@ -205,7 +237,9 @@ char *ldapFind(char* username, char* password)
    }
 
    // free memory
+   if(searchResult != NULL){
    ldap_msgfree(searchResult);
+   }
 
    ////////////////////////////////////////////////////////////////////////////
    // https://linux.die.net/man/3/ldap_unbind_ext_s
@@ -215,5 +249,5 @@ char *ldapFind(char* username, char* password)
    //       LDAPControl *cctrls[]);
    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
 
-   return "SUCCESS";
+   return foundUid;
 }
