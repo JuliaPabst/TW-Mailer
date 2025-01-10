@@ -1,61 +1,38 @@
-# Parent Makefile
-
-# Compiler and flags
-CC=g++
-CFLAGS=-g -Wall -Wextra -Werror -O -std=c++14 -pthread
-
-# Library flags for the LDAP project
+CC=gcc
+CXX=g++
+CFLAGS=-g -Wall -Wextra -Werror -O -std=c99 -pthread
 LIBS=-lldap -llber
 
-# Directories for both projects
-LDAP_DIR=LDAPSample
-SERVER_CLIENT_DIR=ClientServerSample
+BIN_DIR=bin
+OBJ_DIR=obj
 
-# Bin and Obj directories for both projects
-LDAP_BIN_DIR=$(LDAP_DIR)/bin
-LDAP_OBJ_DIR=$(LDAP_DIR)/obj
-
-SERVER_BIN_DIR=$(SERVER_CLIENT_DIR)/bin
-SERVER_OBJ_DIR=$(SERVER_CLIENT_DIR)/obj
-
-.PHONY: all clean rebuild
-
-# Rebuild everything
 rebuild: clean all
 
-# Build all projects
-all: ldap_project client_server_project
+all: $(BIN_DIR)/server $(BIN_DIR)/client
 
-# Clean all projects
 clean:
-	rm -f $(LDAP_BIN_DIR)/* $(LDAP_OBJ_DIR)/* $(SERVER_BIN_DIR)/* $(SERVER_OBJ_DIR)/*
+	rm -f $(BIN_DIR)/* $(OBJ_DIR)/*
 
-# Targets for the LDAP project
-ldap_project: $(LDAP_BIN_DIR)/ldapclient
+# Compile myclient.c into myclient.o
+$(OBJ_DIR)/myclient.o: myclient.c myclient.h
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/myclient.o -c myclient.c
 
-$(LDAP_OBJ_DIR)/ldapclient.o: $(LDAP_DIR)/myldap.c
-	$(CC) $(CFLAGS) -o $(LDAP_OBJ_DIR)/ldapclient.o $(LDAP_DIR)/myldap.c -c
+# Compile myserver.c into myserver.o
+$(OBJ_DIR)/myserver.o: myserver.c helpers.h ldap_functions.h
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/myserver.o -c myserver.c
 
-$(LDAP_OBJ_DIR)/mypw.o: $(LDAP_DIR)/mypw.c
-	$(CC) $(CFLAGS) -o $(LDAP_OBJ_DIR)/mypw.o $(LDAP_DIR)/mypw.c -c
+# Compile helpers.c into helpers.o
+$(OBJ_DIR)/helpers.o: helpers.c helpers.h
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/helpers.o -c helpers.c
 
-$(LDAP_BIN_DIR)/ldapclient: $(LDAP_OBJ_DIR)/ldapclient.o $(LDAP_OBJ_DIR)/mypw.o
-	$(CC) $(CFLAGS) -o $(LDAP_BIN_DIR)/ldapclient $(LDAP_OBJ_DIR)/mypw.o $(LDAP_OBJ_DIR)/ldapclient.o $(LIBS)
+# Compile ldap_functions.c into ldap_functions.o
+$(OBJ_DIR)/ldap_functions.o: ldap_functions.c ldap_functions.h
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/ldap_functions.o -c ldap_functions.c
 
-# Targets for the Client-Server project
-client_server_project: $(SERVER_BIN_DIR)/server $(SERVER_BIN_DIR)/client
+# Link myserver.o, helpers.o, and ldap_functions.o to create the server executable
+$(BIN_DIR)/server: $(OBJ_DIR)/myserver.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/ldap_functions.o
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/server $(OBJ_DIR)/myserver.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/ldap_functions.o $(LIBS)
 
-$(SERVER_OBJ_DIR)/myclient.o: $(SERVER_CLIENT_DIR)/myclient.c
-	$(CC) $(CFLAGS) -o $(SERVER_OBJ_DIR)/myclient.o $(SERVER_CLIENT_DIR)/myclient.c -c
-
-$(SERVER_OBJ_DIR)/myserver.o: $(SERVER_CLIENT_DIR)/myserver.c
-	$(CC) $(CFLAGS) -o $(SERVER_OBJ_DIR)/myserver.o $(SERVER_CLIENT_DIR)/myserver.c -c
-
-$(SERVER_OBJ_DIR)/helpers.o: $(SERVER_CLIENT_DIR)/helpers.c
-	$(CC) $(CFLAGS) -o $(SERVER_OBJ_DIR)/helpers.o $(SERVER_CLIENT_DIR)/helpers.c -c
-
-$(SERVER_BIN_DIR)/server: $(SERVER_OBJ_DIR)/myserver.o $(SERVER_OBJ_DIR)/helpers.o
-	$(CC) $(CFLAGS) -o $(SERVER_BIN_DIR)/server $(SERVER_OBJ_DIR)/myserver.o $(SERVER_OBJ_DIR)/helpers.o
-
-$(SERVER_BIN_DIR)/client: $(SERVER_OBJ_DIR)/myclient.o
-	$(CC) $(CFLAGS) -o $(SERVER_BIN_DIR)/client $(SERVER_OBJ_DIR)/myclient.o
+# Link myclient.o to create the client executable
+$(BIN_DIR)/client: $(OBJ_DIR)/myclient.o
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/client $(OBJ_DIR)/myclient.o
