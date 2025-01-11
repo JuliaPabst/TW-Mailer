@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include "ldap_functions.h"
+#include "session_manager.h"
 
 void signalHandler(int sig) {
     // Suppress unused parameter warning
@@ -86,6 +87,9 @@ void handleLdapLogin(int client_socket) {
         return;
     }
 
+    //Save the username in session
+    addSession(client_socket, retrievedUsername);
+
     // Print the retrieved username for debugging
     printf("Retrieved Username: %s\n", retrievedUsername);
 
@@ -101,19 +105,11 @@ void handleLdapLogin(int client_socket) {
 }
 
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
-    char sender[81], receiver[81], subject[81], message[BUF];
+    const char *sender = getSessionUsername(client_socket);
+    char receiver[81], subject[81], message[BUF];
     char buffer[BUF];
     char inbox_path[256];
     FILE *inbox_file;
-
-    // Read Sender
-    if (readline(client_socket, sender, sizeof(sender)) <= 0 || !isValidUsername(sender)) {
-        printf("DEBUG: Invalid or missing sender received.\n");
-        send(client_socket, "Sender username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
-        return;
-    } else {
-        send(client_socket, "Sender received\n", 4, 0);
-    }
 
     printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
@@ -504,6 +500,8 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             send(client_socket, "Unknown command\n", 16, 0);
         }
     }
+
+    removeSession(client_socket); //Remove the session
 
     close(client_socket); // Close client socket
     return NULL;
