@@ -133,31 +133,21 @@ void handleSendCommand(int create_socket) {
             }
         }
     }
-
-    // Wait for server response
-    size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
-        buffer[size] = '\0';
-        printf("<< %s\n", buffer); // Print server response
-    } else {
-        perror("recv error");
-    }
 }
 
-void handleListCommand(int create_socket, char *username) {
+void handleListCommand(int create_socket) {
     char buffer[BUF];
     int size;
 
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
 
-    // Send username to server
-    sendMessage(create_socket, username);
-
     // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
-        buffer[size] = '\0'; // Null-terminate string
+        buffer[size] = '\0';
+        printf("DEBUG: Received server response: '%s'\n", buffer);
+    
 
         // Check if response indicates no messages
         char *line = strtok(buffer, "\n");
@@ -371,7 +361,7 @@ int main(int argc, char **argv) {
             size = strlen(buffer);
 
             if (buffer[size - 1] == '\n') {
-                buffer[--size] = '\0';
+                buffer[size - 1] = '\0';
             }
 
             if((username == NULL || strcmp(username, "FAILED") == 0) && (strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0)){
@@ -401,7 +391,7 @@ int main(int argc, char **argv) {
                         printf("<< %s\n", buffer);
                     }
                 } else if (strcmp(buffer, "LIST") == 0) {
-                    handleListCommand(create_socket, username);
+                    handleListCommand(create_socket);
                 } else if (strcmp(buffer, "READ") == 0) {
                     handleReadCommand(create_socket, username);
                 } else if (strcmp(buffer, "DEL") == 0) {
@@ -416,7 +406,7 @@ int main(int argc, char **argv) {
             if(username != NULL){
                 free(username);
             }
-            
+
             // Send other commands to the server
             sendMessage(create_socket, buffer);
 

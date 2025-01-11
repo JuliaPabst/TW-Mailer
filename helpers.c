@@ -239,18 +239,13 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
 }
 
 void handleReadCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81], message_number_str[10];
+    const char *username = getSessionUsername(client_socket);
+    char message_number_str[10];
     char user_inbox_path[256];
     char buffer[BUF];
     FILE *inbox_file;
     int message_number;
 
-    // 1. Read Username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "ERR\nInvalid or missing username.\n", 40, 0);
-        return;
-    }
     printf("DEBUG: Username for READ: %s\n", username);
 
     // 2. Read Message Number
@@ -346,18 +341,13 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
 }
 
 void handleDelCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81], message_number_str[10];
+    const char *username = getSessionUsername(client_socket);
+    char message_number_str[10];
     char user_inbox_path[256];
     char buffer[BUF];
     FILE *inbox_file, *temp_file;
     int message_number;
 
-    // 1. Read Username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "ERR\nInvalid or missing username.\n", 40, 0);
-        return;
-    }
     printf("DEBUG: Username for DEL: %s\n", username);
 
     // 2. Read Message Number
