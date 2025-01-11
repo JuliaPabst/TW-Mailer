@@ -69,6 +69,7 @@ void handleLdapLogin(int client_socket) {
         send(client_socket, "ERR Invalid Username\n", 24, 0);
         return;
     }
+    username[size] = '\0'; // Null-terminate the string
     printf("Username: %s", username);
 
     char password[256];
@@ -77,7 +78,7 @@ void handleLdapLogin(int client_socket) {
         send(client_socket, "ERR Invalid password\n", 24, 0);
         return;
     }
-    printf("password: %s", password);
+    password[size] = '\0'; // Null-terminate the string
 
     // Search for the DN using the username
     char *retrievedUsername = ldapFind(username, password);
@@ -96,10 +97,7 @@ void handleLdapLogin(int client_socket) {
     // Send the formatted message to the client
     send(client_socket, retrievedUsername, strlen(retrievedUsername), 0);
 
-    printf("DEBUG");
-    // Free the memory allocated by ldapFind if necessary
     if(retrievedUsername != NULL){
-         printf("DEBUG!");
         free(retrievedUsername);
     }
 }
