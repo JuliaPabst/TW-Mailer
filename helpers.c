@@ -10,23 +10,6 @@
 #include "ldap_functions.h"
 #include "session_manager.h"
 
-void trim(char *str) {
-    char *end;
-
-    // Entferne führende Leerzeichen
-    while (isspace((unsigned char)*str)) str++;
-
-    // Wenn der String leer ist, nichts tun
-    if (*str == 0) return;
-
-    // Entferne abschließende Leerzeichen
-    end = str + strlen(str) - 1;
-    while (end > str && isspace((unsigned char)*end)) end--;
-
-    // Setze neuen Nullterminator
-    *(end + 1) = '\0';
-}
-
 void signalHandler(int sig) {
     // Suppress unused parameter warning
     (void)sig;
@@ -159,10 +142,6 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
         printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
 
-        
-        // Vor dem Vergleich die Eingabe trimmen
-        trim(buffer);
-
         if (strcmp(buffer, ".") == 0) {
             printf("DEBUG: End of message detected.\n");
             break;
@@ -203,18 +182,11 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
 
 
 void handleListCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81];
+    const char *username = getSessionUsername(client_socket);
     char buffer[BUF];
     char user_inbox_path[256];
     FILE *inbox_file;
     int message_count = 0;
-
-    // Read the username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "0\n", 2, 0); // Respond with "0" for no messages
-        return;
-    }
 
     printf("DEBUG: Username for LIST: %s\n", username);
 
