@@ -81,18 +81,16 @@ char *handleLoginCommand(int create_socket) {
     }
 }
 
-void handleSendCommand(int create_socket, char *user) {
+void handleSendCommand(int create_socket) {
     char buffer[BUF];
     int size;
 
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
-    // send sender
-    sendMessage(create_socket, user);
 
     // Collect sender, receiver, subject, and message
     const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
-    int maxLengths[] = {8, 8, 80, BUF - 1};
+    int maxLengths[] = {8, 80, BUF - 1};
 
     for (int i = 0; i < 3; i++) {
         while (1) { // Retry loop for invalid input
@@ -104,12 +102,12 @@ void handleSendCommand(int create_socket, char *user) {
                     buffer[--size] = '\0'; // Remove newline
                 }
 
-                if (i < 3 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
+                if (i < 2 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
                     printf("Invalid %s! Try again.\n", prompts[i]);
                     continue; // Retry current prompt
                 }
 
-                if (i == 3) { // Multi-line input for "Message"
+                if (i == 2) { // Multi-line input for "Message"
                     // Send the first line of the message
                     sendMessage(create_socket, buffer);
 
@@ -388,7 +386,7 @@ int main(int argc, char **argv) {
                 }
                 // Handle "SEND" command
                 if (strcmp(buffer, "SEND") == 0) {
-                    handleSendCommand(create_socket, username);
+                    handleSendCommand(create_socket);
 
                     // Receive server response
                     size = recv(create_socket, buffer, BUF - 1, 0);

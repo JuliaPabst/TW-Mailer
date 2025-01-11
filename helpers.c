@@ -10,6 +10,23 @@
 #include "ldap_functions.h"
 #include "session_manager.h"
 
+void trim(char *str) {
+    char *end;
+
+    // Entferne führende Leerzeichen
+    while (isspace((unsigned char)*str)) str++;
+
+    // Wenn der String leer ist, nichts tun
+    if (*str == 0) return;
+
+    // Entferne abschließende Leerzeichen
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+
+    // Setze neuen Nullterminator
+    *(end + 1) = '\0';
+}
+
 void signalHandler(int sig) {
     // Suppress unused parameter warning
     (void)sig;
@@ -38,7 +55,7 @@ int readline(int socket, char *buffer, size_t size) {
             break;
         }
 
-        if (c == '\0') {
+        if (c == '\0' || c == '\n') {
             break; // End of line
         }
 
@@ -142,10 +159,15 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
         printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
 
-        if (strcmp(buffer, ".") == 0) { // End of message detected
+        
+        // Vor dem Vergleich die Eingabe trimmen
+        trim(buffer);
+
+        if (strcmp(buffer, ".") == 0) {
             printf("DEBUG: End of message detected.\n");
             break;
         }
+
 
         if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
             printf("DEBUG: Message buffer overflow detected.\n");
@@ -154,7 +176,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
 
         strcat(message, buffer);
-        strcat(message, "\n"); // Append a newline to each line
+        strcat(message, "\n"); // Append a newline to each line 
     }
 
     printf("DEBUG: Complete message:\n%s", message); // Debug full message

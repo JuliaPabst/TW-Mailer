@@ -7,6 +7,7 @@
 #define BUF 1024
 #define MESSAGE_BUF 4096
 
+void trim(char *str);
 void signalHandler(int sig);
 int isValidUsername(const char *username);
 void handleLdapLogin(int client_socket);
