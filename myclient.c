@@ -176,25 +176,16 @@ void handleListCommand(int create_socket) {
     }
 }
 
-void handleReadCommand(int create_socket, char *username) {
+void handleReadCommand(int create_socket) {
     char buffer[BUF];
     int size;
 
     // Send "READ" command to the server
     sendMessage(create_socket, "READ");
 
-    // Send the username
-    if (isValidInput(username, 8)) {
-        printf("Sender: %s", username);
-        sendMessage(create_socket, username); // Send username as the sender
-    } else {
-        printf("Invalid username passed as sender!\n");
-        sendMessage(create_socket, "ERR"); // Notify server of an error
-        return;
-    }
-
     // Prompt for message number
     while (1) {
+        memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         printf(">> Message Number: ");
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
@@ -211,6 +202,7 @@ void handleReadCommand(int create_socket, char *username) {
     }
 
     // Receive the complete response
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0';
@@ -393,7 +385,7 @@ int main(int argc, char **argv) {
                 } else if (strcmp(buffer, "LIST") == 0) {
                     handleListCommand(create_socket);
                 } else if (strcmp(buffer, "READ") == 0) {
-                    handleReadCommand(create_socket, username);
+                    handleReadCommand(create_socket);
                 } else if (strcmp(buffer, "DEL") == 0) {
                     handleDelCommand(create_socket, username);
                 }
