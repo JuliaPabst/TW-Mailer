@@ -62,7 +62,7 @@ int isValidUsername(const char *username) {
     return 1;
 }
 
-int isBlackListed(const char *ip) {
+int isBlackListed(const char *ip, time_t *remaining_time) {
     FILE *file = fopen(BLACKLIST_FILE, "r");
     if(!file) {
         return 0;
@@ -70,6 +70,7 @@ int isBlackListed(const char *ip) {
 
     char line[256];
     time_t current_time = time(NULL);
+    int blacklisted = 0;
 
     while(fgets(line, sizeof(line), file)) {
         char blacklisted_ip[INET_ADDRSTRLEN];
@@ -78,15 +79,16 @@ int isBlackListed(const char *ip) {
         if (sscanf(line, "%*[^:] - blocked IP: %s %ld", blacklisted_ip, &blacklist_time) == 2) {
             if (strcmp(ip, blacklisted_ip) == 0) {
                 if (difftime(current_time, blacklist_time) < BLACKLIST_DURATION) {
-                    fclose(file);
-                    return 1;
+                    blacklisted = 1;
+                    *remaining_time = BLACKLIST_DURATION - difftime(current_time, blacklist_time);
+                    break;
                 }
             }
         }
     }
 
     fclose(file);
-    return 0;
+    return blacklisted;
 }
 
 void addToBlackList(const char *ip) {
@@ -147,9 +149,13 @@ void handleLdapLogin(int client_socket) {
 
     printf("DEBUG: Received LOGIN command from IP: %s\n", client_ip);
 
-    if(isBlackListed(client_ip)) {
+    time_t remaining_time = 0;
+    if(isBlackListed(client_ip, &remaining_time)) {
+        char error_msg[128];
+        snprintf(error_msg, sizeof(error_msg),
+                 "ERR\nYour IP is blocked for %.0f seconds.\n", (double)remaining_time);
         printf("DEBUG: IP %s is blacklisted\n", client_ip);
-        send(client_socket, "ERR\nYour IP is blocked for 1 minute.\n", 39, 0);
+        send(client_socket, error_msg, strlen(error_msg), 0);
         return;
     }
 

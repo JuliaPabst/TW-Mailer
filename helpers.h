@@ -18,7 +18,7 @@ void handleListCommand(int client_socket, const char *mail_spool_dir);
 void handleDelCommand(int client_socket, const char *mail_spool_dir);
 void *clientCommunication(void *data, const char *mail_spool_dir);
 int readline(int socket, char *buffer, size_t size);
-int isBlackListed(const char *ip);
+int isBlackListed(const char *ip, time_t *remaining_time);
 void addToBlackList(const char *ip);
 void resetLoginAttempts(const char *ip);
 void recordFailedAttempt(const char *ip);

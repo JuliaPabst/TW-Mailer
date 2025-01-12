@@ -19,6 +19,13 @@ char *handleLoginCommand(int create_socket) {
     char password[256];
     int size;
 
+    
+      if (username == NULL) {
+        perror("Memory allocation error");
+        printf("Username was NULL");
+        return NULL;
+    }
+
     // Send "LOGIN" command to the server
     sendMessage(create_socket, "LOGIN");
 
@@ -26,6 +33,7 @@ char *handleLoginCommand(int create_socket) {
     printf(">> LDAP Username: ");
     if (fgets(username, 256, stdin) == NULL) {
         perror("Error reading username");
+        free(username);  // Free memory on failure
         return NULL; // Login failed
     }
 
@@ -54,6 +62,7 @@ char *handleLoginCommand(int create_socket) {
 
     if (len < 0) {
     perror("Error reading password");
+    free(username);  // Free memory on failure
     return NULL; // Login failed
     }
 
@@ -61,7 +70,7 @@ char *handleLoginCommand(int create_socket) {
     password[len] = '\0';
     char *newline = strchr(password, '\n');
     if (newline) {
-    *newline = '\0';
+        *newline = '\0';
     }
 
     
@@ -72,11 +81,16 @@ char *handleLoginCommand(int create_socket) {
     if (size > 0) {
         buffer[size] = '\0';
         printf("<< %s\n", buffer); // Print server response
+        if (strstr(buffer, "OK") != NULL) {
+            return username;  // Login successful
+        }
         return username; 
     } else {
         perror("recv error");
-        return NULL;
     }
+
+    free(username);
+    return NULL;
 }
 
 void handleSendCommand(int create_socket) {
@@ -352,6 +366,9 @@ int main(int argc, char **argv) {
             if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
                 // Handle "LOGIN" command
                 if (strcmp(buffer, "LOGIN") == 0) {
+                    if (username != NULL) {
+                        free(username);  // Free old username before re-login
+                    }
                     username = handleLoginCommand(create_socket);
                 }
                 // Handle "SEND" command
@@ -404,6 +421,10 @@ int main(int argc, char **argv) {
             }
         }
     } while (!isQuit);
+
+    if(username != NULL){
+        free(username);  // Free username at the end
+    }
 
     if (create_socket != -1) {
         shutdown(create_socket, SHUT_RDWR);
