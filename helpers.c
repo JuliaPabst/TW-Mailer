@@ -26,18 +26,18 @@ int readline(int socket, char *buffer, size_t size) {
 
     while(i < size - 1) { // Reserve space for null terminator
         ssize_t bytes = recv(socket, &c, 1, 0);
-        if (bytes == -1) {
+        if(bytes == -1) {
             perror("recv error");
             return -1; // Return error
-        } else if (bytes == 0) {
+        } else if(bytes == 0) {
             // Connection closed by the client
-            if (i == 0) {
+            if(i == 0) {
                 return -1; // No data read
             }
             break;
         }
 
-        if (c == '\0' || c == '\n') {
+        if(c == '\0' || c == '\n') {
             break; // End of line
         }
 
@@ -46,7 +46,7 @@ int readline(int socket, char *buffer, size_t size) {
 
     buffer[i] = '\0'; // Null-terminate the string
     printf("DEBUG: Received line: '%s'\n", buffer); // Add debug statement
-    return (int)i; // Return the number of characters read
+    return(int)i; // Return the number of characters read
 }
 
 int isValidUsername(const char *username) {
@@ -59,7 +59,7 @@ int isValidUsername(const char *username) {
 
 int isBlackListed(const char *ip, time_t *remaining_time) {
     FILE *file = fopen(BLACKLIST_FILE, "r");
-    if (!file) {
+    if(!file) {
         perror("Failed to open blacklist file");
         return 0;
     }
@@ -71,17 +71,16 @@ int isBlackListed(const char *ip, time_t *remaining_time) {
 
     printf("DEBUG: Checking blacklist for IP: %s\n", ip);
 
-    while (fgets(line, sizeof(line), file)) {
+    while(fgets(line, sizeof(line), file)) {
         char blacklisted_ip[INET_ADDRSTRLEN];
         time_t blacklist_time;
 
         // Correctly parse the line
-        if (sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
-            // printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
+        if(sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
 
-            if (strcmp(ip, blacklisted_ip) == 0) {
+            if(strcmp(ip, blacklisted_ip) == 0) {
                 // Update the latest blacklist time
-                if (blacklist_time > latest_blacklist_time) {
+                if(blacklist_time > latest_blacklist_time) {
                     latest_blacklist_time = blacklist_time;
                 }
             }
@@ -92,9 +91,9 @@ int isBlackListed(const char *ip, time_t *remaining_time) {
 
     fclose(file);
 
-    if (latest_blacklist_time > 0) {
+    if(latest_blacklist_time > 0) {
         double time_diff = difftime(current_time, latest_blacklist_time);
-        if (time_diff < BLACKLIST_DURATION) {
+        if(time_diff < BLACKLIST_DURATION) {
             *remaining_time = BLACKLIST_DURATION - time_diff;
             blacklisted = 1;
             printf("DEBUG: IP %s is blacklisted with remaining time: %.0f seconds\n", ip, (double)*remaining_time);
@@ -111,7 +110,7 @@ int isBlackListed(const char *ip, time_t *remaining_time) {
 
 void addToBlackList(const char *ip) {
     FILE *file = fopen(BLACKLIST_FILE, "a");
-    if (!file) {
+    if(!file) {
         perror("Failed to open blacklist file");
         return;
     }
@@ -216,7 +215,7 @@ void handleLdapLogin(int client_socket) {
     printf("Retrieved Username: %s\n", retrievedUsername);
     send(client_socket, "OK\nLogin successful.\n", 22, 0);
 
-    if (retrievedUsername != NULL) {
+    if(retrievedUsername != NULL) {
         free(retrievedUsername);
     }
 }
@@ -230,20 +229,20 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     FILE *inbox_file;
 
     // Read Receiver
-    if (readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)) {
+    if(readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)) {
         send(client_socket, "ERR Invalid receiver\n", 22, 0);
         return;
     }
 
     // Read Subject
-    if (readline(client_socket, subject, sizeof(subject)) <= 0 || strlen(subject) > 80) {
+    if(readline(client_socket, subject, sizeof(subject)) <= 0 || strlen(subject) > 80) {
         send(client_socket, "ERR Invalid subject\n", 21, 0);
         return;
     }
 
     // Read Message (including empty lines)
     message[0] = '\0';
-    while(1) {
+    while(1){
         int bytes_read = readline(client_socket, buffer, sizeof(buffer));
         if(bytes_read < 0) {
             send(client_socket, "ERR Reading message failed\n", 28, 0);
@@ -262,7 +261,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
 
     // Create user directory if not exists
     snprintf(user_dir, sizeof(user_dir), "%s/%s", mail_spool_dir, receiver);
-    if (mkdir(user_dir, 0755) == -1 && errno != EEXIST) {
+    if(mkdir(user_dir, 0755) == -1 && errno != EEXIST) {
         perror("Error creating user directory");
         send(client_socket, "ERR Could not create user directory\n", 37, 0);
         return;
@@ -271,7 +270,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     // Save the message
     snprintf(inbox_path, sizeof(inbox_path), "%s/inbox.txt", user_dir);
     inbox_file = fopen(inbox_path, "a");
-    if (!inbox_file) {
+    if(!inbox_file) {
         perror("Error opening inbox file");
         send(client_socket, "ERR Could not open inbox\n", 25, 0);
         return;
@@ -279,19 +278,19 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n", sender, receiver, subject, message);
 
     // Process attachments
-    if (readline(client_socket, buffer, sizeof(buffer)) > 0 && strcmp(buffer, "ATTACHMENT_START") == 0) {
+    if(readline(client_socket, buffer, sizeof(buffer)) > 0 && strcmp(buffer, "ATTACHMENT_START") == 0) {
         // Create attachment directory if not exists
         char attachment_dir[512];
         snprintf(attachment_dir, sizeof(attachment_dir), "%s/attachments", user_dir);
-        if (mkdir(attachment_dir, 0755) == -1 && errno != EEXIST) {
+        if(mkdir(attachment_dir, 0755) == -1 && errno != EEXIST) {
             send(client_socket, "ERR Unable to create attachments directory\n", 45, 0);
             return;
         }
 
         // Read and save attachments
-        while (1) {
+        while(1) {
             char attachment_name[256];
-            if (readline(client_socket, attachment_name, sizeof(attachment_name)) <= 0) {
+            if(readline(client_socket, attachment_name, sizeof(attachment_name)) <= 0) {
                 fclose(inbox_file);
                 send(client_socket, "ERR Missing attachment name\n", 29, 0);
                 return;
@@ -300,7 +299,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
             char attachment_path[1024];
             snprintf(attachment_path, sizeof(attachment_path), "%s/%s", attachment_dir, attachment_name);
             FILE *attachment_file = fopen(attachment_path, "wb");
-            if (!attachment_file) {
+            if(!attachment_file) {
                 perror("Error opening attachment file");
                 fclose(inbox_file);
                 send(client_socket, "ERR Could not save attachment\n", 31, 0);
@@ -308,9 +307,9 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
             }
 
             // receive data for attachments
-            while (1) {
+            while(1) {
                 ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-                if (bytes_received < 0) {
+                if(bytes_received < 0) {
                     perror("Error receiving file data");
                     fclose(attachment_file);
                     fclose(inbox_file);
@@ -323,20 +322,20 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
 
                 // check if "ATTACHMENT_END" is given
                 size_t bytes_to_write = bytes_received;
-                for (size_t i = 0; i < (size_t)(bytes_received - 14); ++i) {
-                    if (memcmp(buffer + i, "ATTACHMENT_END", 14) == 0) {
+                for(size_t i = 0; i < (size_t)(bytes_received - 14); ++i) {
+                    if(memcmp(buffer + i, "ATTACHMENT_END", 14) == 0) {
                         bytes_to_write = i;
                         break;
                     }
                 }
 
                 // write in received data
-                if (bytes_to_write > 0) {
+                if(bytes_to_write > 0) {
                     fwrite(buffer, 1, bytes_to_write, attachment_file);
                 }
 
                 // if marker was found, break loop
-                if ((size_t)bytes_to_write < (size_t)bytes_received) {
+                if((size_t)bytes_to_write < (size_t)bytes_received) {
                     printf("DEBUG: Attachment end marker found\n");
                     break;
                 }
@@ -368,7 +367,7 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     snprintf(attachment_path, sizeof(attachment_path), "%s/%s/attachments", mail_spool_dir, username);
     
     inbox_file = fopen(user_inbox_path, "r");
-    if (!inbox_file) {
+    if(!inbox_file) {
         // User inbox not found or other error
         printf("DEBUG: Inbox file not found for user %s.\n", username);
         send(client_socket, "0\nThis user has not received any messages yet!\n\n", 60, 0);
@@ -380,30 +379,30 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
     char line[BUF];
     response_length += snprintf(response + response_length, sizeof(response) - response_length, "List of Messages\n");
 
-    while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "From: ", 6) == 0) {
+    while(fgets(line, sizeof(line), inbox_file)) {
+        if(strncmp(line, "From: ", 6) == 0) {
             response_length += snprintf(response + response_length, sizeof(response) - response_length, "\nMessage %d:\n%s", ++message_count, line);
-        } else if (strncmp(line, "To: ", 4) == 0 || strncmp(line, "Subject: ", 9) == 0) {
+        } else if(strncmp(line, "To: ", 4) == 0 || strncmp(line, "Subject: ", 9) == 0) {
             response_length += snprintf(response + response_length, sizeof(response) - response_length, "%s", line);
-        } else if (strncmp(line, "Attachment: ", 12) == 0) {
+        } else if(strncmp(line, "Attachment: ", 12) == 0) {
             response_length += snprintf(response + response_length, sizeof(response) - response_length, "  %s\n", line);
             printf("\n");
         }
     }
     fclose(inbox_file);
 
-    if (message_count == 0) {
+    if(message_count == 0) {
         response_length += snprintf(response + response_length, sizeof(response) - response_length, "No messages found.\n");
     }
 
     // list attachments
     DIR *dir = opendir(attachment_path);
-    if (dir) {
+    if(dir) {
         struct dirent *entry;
         response_length += snprintf(response + response_length, sizeof(response) - response_length, "\nAttachment summary:\n");
 
-        while ((entry = readdir(dir))) {
-            if (entry->d_name[0] != '.') { // ignore '.' and '..'
+        while((entry = readdir(dir))) {
+            if(entry->d_name[0] != '.') { // ignore '.' and '..'
                 response_length += snprintf(response + response_length, sizeof(response) - response_length, "- %s\n", entry->d_name);
             }
         }
@@ -427,7 +426,7 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Username for READ: %s\n", username);
 
     // 2. Read Message Number
-    if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
+    if(readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
         sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
         printf("DEBUG: Invalid or missing message number received.\n");
         send(client_socket, "ERR\nInvalid message number.\n", 30, 0);
@@ -439,7 +438,7 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
     inbox_file = fopen(user_inbox_path, "r");
 
-    if (!inbox_file) {
+    if(!inbox_file) {
         printf("DEBUG: Inbox file not found for user %s.\n", username);
         char error_msg[BUF];
         snprintf(error_msg, sizeof(error_msg), "ERR\nInbox file not found for user %s.\n", username);
@@ -454,25 +453,25 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
     char line[BUF];
     int is_first_message = 1;
 
-    while (fgets(line, sizeof(line), inbox_file)) {
+    while(fgets(line, sizeof(line), inbox_file)) {
         if (is_first_message) {
             // First message special handling
-            if (current_message == message_number) {
+            if(current_message == message_number) {
                 found = 1;
                 break;
             }
             is_first_message = 0;
-        } else if (strncmp(line, "---", 3) == 0) {
+        } else if(strncmp(line, "---", 3) == 0) {
             // Message boundary detected
             current_message++;
         }
-        if (current_message == message_number) {
+        if(current_message == message_number) {
             found = 1;
             break;
         }
     }
 
-    if (!found || feof(inbox_file)) {
+    if(!found || feof(inbox_file)) {
         printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
         char error_msg[BUF];
         snprintf(error_msg, sizeof(error_msg), "ERR\nMessage number %d is empty for user %s.\n",
@@ -484,15 +483,15 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
 
     // 5. Extract the Message
     buffer[0] = '\0';
-    while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "---", 3) == 0) {
+    while(fgets(line, sizeof(line), inbox_file)) {
+        if(strncmp(line, "---", 3) == 0) {
             break;
         }
         strncat(buffer, line, sizeof(buffer) - strlen(buffer) - 1);
     }
     fclose(inbox_file);
 
-    if (strlen(buffer) == 0) {
+    if(strlen(buffer) == 0) {
         printf("DEBUG: Message number %d is empty for user %s.\n", message_number, username);
         char error_msg[BUF];
         snprintf(error_msg, sizeof(error_msg), "ERR\nMessage number %d is empty for user %s.\n",
@@ -506,7 +505,7 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
     size_t response_length = snprintf(response, sizeof(response), "OK\n");
     size_t buffer_length = strlen(buffer);
 
-    if (response_length + buffer_length >= sizeof(response)) {
+    if(response_length + buffer_length >= sizeof(response)) {
         // Truncate the message to fit into the response buffer
         strncat(response, buffer, sizeof(response) - response_length - 1);
     } else {
@@ -530,7 +529,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
 
     // 1. Read Message Number
     memset(message_number_str, 0, sizeof(message_number_str));
-    if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
+    if(readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
         sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
         printf("DEBUG: Invalid or missing message number received.\n");
         send(client_socket, "ERR\nInvalid message number.\n", 30, 0);
@@ -541,7 +540,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     // 2. Construct Inbox Path
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
     inbox_file = fopen(user_inbox_path, "r");
-    if (!inbox_file) {
+    if(!inbox_file) {
         printf("DEBUG: Inbox file not found for user %s.\n", username);
         send(client_socket, "ERR\nInbox file not found.\n", 28, 0);
         return;
@@ -550,15 +549,15 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     // 3. Count total messages
     int total_messages = 0;
     char line[BUF];
-    while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "---", 3) == 0) {
+    while(fgets(line, sizeof(line), inbox_file)) {
+        if(strncmp(line, "---", 3) == 0) {
             total_messages++;
         }
     }
     rewind(inbox_file);  // Set file pointer back to the beginning
 
     // 4. Validate message number
-    if (message_number > total_messages) {
+    if(message_number > total_messages) {
         printf("DEBUG: Message number %d does not exist. Total messages: %d\n", message_number, total_messages);
         send(client_socket, "ERR\nMessage number does not exist.\n", 36, 0);
         fclose(inbox_file);
@@ -568,7 +567,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     // 5. Create Temporary File
     snprintf(buffer, sizeof(buffer), "%s/temp_inbox.txt", mail_spool_dir);
     temp_file = fopen(buffer, "w");
-    if (!temp_file) {
+    if(!temp_file) {
         perror("DEBUG: Failed to create temp file");
         fclose(inbox_file);
         send(client_socket, "ERR\nFailed to create temporary file.\n", 38, 0);
@@ -608,7 +607,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     fclose(temp_file);
 
     // 7. Handle case if message was not found
-    if (!found) {
+    if(!found) {
         printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
         remove(buffer);
         send(client_socket, "ERR\nMessage number not found.\n", 32, 0);
@@ -616,7 +615,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     }
 
     // 8. Replace Original File with Temp File
-    if (rename(buffer, user_inbox_path) != 0) {
+    if(rename(buffer, user_inbox_path) != 0) {
         perror("DEBUG: Failed to replace inbox file");
         send(client_socket, "ERR\nFailed to update inbox file.\n", 34, 0);
         return;
@@ -635,17 +634,17 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
     ////////////////////////////////////////////////////////////////////////////
    // SEND welcome message
    strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n\n");
-   if (send(client_socket, buffer, strlen(buffer), 0) == -1)
+   if(send(client_socket, buffer, strlen(buffer), 0) == -1)
    {
       perror("send failed");
       return NULL;
    }
 
-    while (1) {
+    while(1) {
         // Receive data from the client
         size = recv(client_socket, buffer, BUF - 1, 0);
-        if (size <= 0) {
-            if (size == 0) {
+        if(size <= 0) {
+            if(size == 0) {
                 printf("Client disconnected\n");
             } else {
                 perror("recv error");
@@ -656,26 +655,26 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         printf("\nReceived from client: %s\n", buffer); // Print received data
         
         // Check command type (exact matching with strcmp)
-        if (strcmp(buffer, "LOGIN") == 0) {
+        if(strcmp(buffer, "LOGIN") == 0) {
             // Process the LOGIN command
             printf("Receive LOGIN command\r\n");
             handleLdapLogin(client_socket);
-        } else if (strcmp(buffer, "SEND") == 0) {
+        } else if(strcmp(buffer, "SEND") == 0) {
             // Process the SEND command
             printf("Receive SEND command\r\n");
             handleSendCommand(client_socket, mail_spool_dir);
-        } else if (strcmp(buffer, "QUIT") == 0) {
+        } else if(strcmp(buffer, "QUIT") == 0) {
             // Process the QUIT command (client disconnect)
             break;
-        } else if (strcmp(buffer, "LIST") == 0) {
+        } else if(strcmp(buffer, "LIST") == 0) {
             // Process the LIST command
             printf("Receive LIST command\r\n");
             handleListCommand(client_socket, mail_spool_dir);
-        } else if (strcmp(buffer, "READ") == 0) {
+        } else if(strcmp(buffer, "READ") == 0) {
             // Process the READ command
             printf("Receive READ command\r\n");
             handleReadCommand(client_socket, mail_spool_dir);
-        } else if (strcmp(buffer, "DEL") == 0) {
+        } else if(strcmp(buffer, "DEL") == 0) {
             // Process the DEL command
             printf("Receive DEL command\n");
             handleDelCommand(client_socket, mail_spool_dir);
