@@ -88,7 +88,7 @@ void handleSendCommand(int create_socket) {
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
 
-    // Collect sender, receiver, subject, and message
+    // Collect receiver, subject, and message
     const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
     int maxLengths[] = {8, 80, BUF - 1};
 
@@ -133,6 +133,41 @@ void handleSendCommand(int create_socket) {
             }
         }
     }
+
+    // Ask if user wants to attach files
+    printf(">> Do you want to attach a file? (y/n): ");
+    if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+        if (buffer[0] == 'y' || buffer[0] == 'Y') {
+            sendMessage(create_socket, "ATTACHMENT_START"); // Signal server to expect attachments
+
+                char file_path[512];
+                printf(">> Enter file path or '.' to finish: ");
+                if (fgets(file_path, sizeof(file_path), stdin) != NULL) {
+                    file_path[strcspn(file_path, "\n")] = '\0'; // Remove newline
+
+                    FILE *file = fopen(file_path, "rb");
+                    if (file) {
+                        char *filename = strrchr(file_path, '/');
+                        filename = filename ? filename + 1 : file_path;
+                        sendMessage(create_socket, filename); // Send filename
+
+                        char file_buffer[BUF];
+                        size_t size;
+                        while ((size = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+                            send(create_socket, file_buffer, size, 0);
+                        }
+                        fclose(file);
+                        printf(">> Attachment %s sent successfully.\n", filename);
+                        sendMessage(create_socket, "ATTACHMENT_END");
+                    } else {
+                        printf(">> Could not open file: %s\n", file_path);
+                    }
+                }
+            
+        } else {
+            sendMessage(create_socket, "NO_ATTACH");
+        }
+    }
 }
 
 void handleListCommand(int create_socket) {
@@ -146,7 +181,7 @@ void handleListCommand(int create_socket) {
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0';
-        printf("DEBUG: Received server response: '%s'\n", buffer);
+        printf(">>%s\n", buffer);
     
 
         // Check if response indicates no messages
@@ -176,25 +211,16 @@ void handleListCommand(int create_socket) {
     }
 }
 
-void handleReadCommand(int create_socket, char *username) {
+void handleReadCommand(int create_socket) {
     char buffer[BUF];
     int size;
 
     // Send "READ" command to the server
     sendMessage(create_socket, "READ");
 
-    // Send the username
-    if (isValidInput(username, 8)) {
-        printf("Sender: %s", username);
-        sendMessage(create_socket, username); // Send username as the sender
-    } else {
-        printf("Invalid username passed as sender!\n");
-        sendMessage(create_socket, "ERR"); // Notify server of an error
-        return;
-    }
-
     // Prompt for message number
     while (1) {
+        memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         printf(">> Message Number: ");
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
@@ -211,6 +237,7 @@ void handleReadCommand(int create_socket, char *username) {
     }
 
     // Receive the complete response
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0';
@@ -393,7 +420,7 @@ int main(int argc, char **argv) {
                 } else if (strcmp(buffer, "LIST") == 0) {
                     handleListCommand(create_socket);
                 } else if (strcmp(buffer, "READ") == 0) {
-                    handleReadCommand(create_socket, username);
+                    handleReadCommand(create_socket);
                 } else if (strcmp(buffer, "DEL") == 0) {
                     handleDelCommand(create_socket, username);
                 }

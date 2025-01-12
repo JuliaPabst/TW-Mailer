@@ -1,14 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
-#include <string.h>      
-#include <sys/socket.h>
 #include "helpers.h"
-#include <dirent.h>
-#include <errno.h>
-#include "ldap_functions.h"
-#include "session_manager.h"
+
 
 void signalHandler(int sig) {
     // Suppress unused parameter warning
@@ -108,92 +99,148 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     const char *sender = getSessionUsername(client_socket);
     char receiver[81], subject[81], message[BUF];
     char buffer[BUF];
-    char inbox_path[256];
+    char inbox_path[512];
+    char user_dir[256];
     FILE *inbox_file;
-
-    printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
     // Read Receiver
     if (readline(client_socket, receiver, sizeof(receiver)) <= 0 || !isValidUsername(receiver)) {
-        printf("DEBUG: Invalid or missing receiver received.\n");
-        send(client_socket, "Receiver username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
+        send(client_socket, "ERR Invalid receiver\n", 22, 0);
         return;
     }
-    printf("DEBUG: Receiver: %s\n", receiver); // Debug receiver
 
     // Read Subject
     if (readline(client_socket, subject, sizeof(subject)) <= 0 || strlen(subject) > 80) {
-        printf("DEBUG: Invalid or missing subject received.\n");
-        send(client_socket, "Receiver subject was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
+        send(client_socket, "ERR Invalid subject\n", 21, 0);
         return;
     }
-    printf("DEBUG: Subject: %s\n", subject); // Debug subject
 
     // Read Message
-    message[0] = '\0'; // Clear the message buffer
-    printf("DEBUG: Starting to read message lines.\n");
-
+    message[0] = '\0';
     while (1) {
-        int bytes_read = readline(client_socket, buffer, sizeof(buffer));
-        if (bytes_read < 0) { // Connection error or disconnection
-            printf("DEBUG: Error or disconnection while reading message lines.\n");
-            send(client_socket, "ERR\n", 4, 0);
-            return;
-        }
-        printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
-
-        if (strcmp(buffer, ".") == 0) {
-            printf("DEBUG: End of message detected.\n");
+        if (readline(client_socket, buffer, sizeof(buffer)) <= 0 || strcmp(buffer, ".") == 0) {
             break;
         }
+        strcat(message, buffer);
+        strcat(message, "\n");
+    }
 
+    // Create user directory if not exists
+    snprintf(user_dir, sizeof(user_dir), "%s/%s", mail_spool_dir, receiver);
+    if (mkdir(user_dir, 0755) == -1 && errno != EEXIST) {
+        perror("Error creating user directory");
+        send(client_socket, "ERR Could not create user directory\n", 37, 0);
+        return;
+    }
 
-        if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
-            printf("DEBUG: Message buffer overflow detected.\n");
-            send(client_socket, "ERR\n", 4, 0);
+    // Save the message
+    snprintf(inbox_path, sizeof(inbox_path), "%s/inbox.txt", user_dir);
+    inbox_file = fopen(inbox_path, "a");
+    if (!inbox_file) {
+        perror("Error opening inbox file");
+        send(client_socket, "ERR Could not open inbox\n", 25, 0);
+        return;
+    }
+    fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n", sender, receiver, subject, message);
+    
+
+    // Process attachments
+    if (readline(client_socket, buffer, sizeof(buffer)) > 0 && strcmp(buffer, "ATTACHMENT_START") == 0) {
+        // Create attachment directory if not exists
+        char attachment_dir[512];
+        snprintf(attachment_dir, sizeof(attachment_dir), "%s/attachments", user_dir);
+        if (mkdir(attachment_dir, 0755) == -1 && errno != EEXIST) {
+            send(client_socket, "ERR Unable to create attachments directory\n", 45, 0);
             return;
         }
 
-        strcat(message, buffer);
-        strcat(message, "\n"); // Append a newline to each line 
+        // Read and save attachments
+        while (1) {
+            char attachment_name[256];
+            if (readline(client_socket, attachment_name, sizeof(attachment_name)) <= 0) {
+                fclose(inbox_file);
+                send(client_socket, "ERR Missing attachment name\n", 29, 0);
+                return;
+            }
+
+            if (strcmp(attachment_name, ".") == 0) {
+                break; // No more attachments
+            }
+
+            char attachment_path[1024];
+            snprintf(attachment_path, sizeof(attachment_path), "%s/%s", attachment_dir, attachment_name);
+            FILE *attachment_file = fopen(attachment_path, "wb");
+            if (!attachment_file) {
+                perror("Error opening attachment file");
+                fclose(inbox_file);
+                send(client_socket, "ERR Could not save attachment\n", 31, 0);
+                return;
+            }
+
+            // receive data for attachments
+            while (1) {
+                ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+                if (bytes_received < 0) {
+                    perror("Error receiving file data");
+                    fclose(attachment_file);
+                    fclose(inbox_file);
+                    return;
+                } else if (bytes_received == 0) {
+                    printf("DEBUG: Client disconnected unexpectedly\n");
+                    fclose(attachment_file);
+                    break;
+                }
+
+                // check if "ATTACHMENT_END" is given
+                size_t bytes_to_write = bytes_received;
+                for (size_t i = 0; i < (size_t)(bytes_received - 14); ++i) {
+                    if (memcmp(buffer + i, "ATTACHMENT_END", 14) == 0) {
+                        bytes_to_write = i;
+                        break;
+                    }
+                }
+
+                // write in received data
+                if (bytes_to_write > 0) {
+                    fwrite(buffer, 1, bytes_to_write, attachment_file);
+                }
+
+                // if marker was found, break loop
+                if ((size_t)bytes_to_write < (size_t)bytes_received) {
+                    printf("DEBUG: Attachment end marker found\n");
+                    break;
+                }
+            }
+
+            fclose(attachment_file);
+            fprintf(inbox_file, "Attachment: %s\n", attachment_name);
+            send(client_socket, "OK\n", 3, 0); // Always send a final response to the client
+            printf("DEBUG: Message and attachments saved successfully.\n");
+            break;
+        }
     }
-
-    printf("DEBUG: Complete message:\n%s", message); // Debug full message
-
-    // Prepare receiver's inbox path
-    snprintf(inbox_path, sizeof(inbox_path), "%s/%s_inbox.txt", mail_spool_dir, receiver);
-    printf("DEBUG: Inbox path: %s\n", inbox_path); // Debug inbox path
-
-    // Append the message to the receiver's inbox
-    inbox_file = fopen(inbox_path, "a");
-    if (!inbox_file) {
-        perror("DEBUG: Error opening inbox file");
-        send(client_socket, "Message not sent to inbox of receiver.\n", 4, 0);
-        return;
-    }
-    fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n---\n", sender, receiver, subject, message);
     fclose(inbox_file);
-    printf("DEBUG: Message written to inbox successfully.\n");
-
-    // Respond with success
     send(client_socket, "OK\n", 3, 0);
-    printf("DEBUG: Sent 'OK' response to client.\n");
 }
+
 
 
 void handleListCommand(int client_socket, const char *mail_spool_dir) {
     const char *username = getSessionUsername(client_socket);
-    char buffer[BUF];
+    char response[BUF * 2];
     char user_inbox_path[256];
+    char attachment_path[256];
     FILE *inbox_file;
     int message_count = 0;
+    size_t response_length = 0;
 
     printf("DEBUG: Username for LIST: %s\n", username);
 
     // Construct the path to the user's inbox file
-    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
+    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
+    snprintf(attachment_path, sizeof(attachment_path), "%s/%s/attachments", mail_spool_dir, username);
+    
     inbox_file = fopen(user_inbox_path, "r");
-
     if (!inbox_file) {
         // User inbox not found or other error
         printf("DEBUG: Inbox file not found for user %s.\n", username);
@@ -202,39 +249,43 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
         return;
     }
 
-    // Read subjects from the inbox file
-    buffer[0] = '\0'; // Clear the buffer
+    // parse messages toi display correctly
     char line[BUF];
-    size_t remaining_size = sizeof(buffer); // Track remaining space in buffer
+    response_length += snprintf(response + response_length, sizeof(response) - response_length, "List of Messages\n");
 
     while (fgets(line, sizeof(line), inbox_file)) {
-        // If the line starts with "Subject: ", extract the subject
-        if (strncmp(line, "Subject: ", 9) == 0) {
-            message_count++;
-            size_t subject_length = strlen(line + 9); // Length of the subject
-            if (subject_length + 1 > remaining_size) { // +1 for null terminator
-                printf("DEBUG: Buffer overflow prevented while reading subjects.\n");
-                break;
-            }
-            strncat(buffer, line + 9, remaining_size - 1);
-            remaining_size -= subject_length;
+        if (strncmp(line, "From: ", 6) == 0) {
+            response_length += snprintf(response + response_length, sizeof(response) - response_length, "\nMessage %d:\n%s", ++message_count, line);
+        } else if (strncmp(line, "To: ", 4) == 0 || strncmp(line, "Subject: ", 9) == 0) {
+            response_length += snprintf(response + response_length, sizeof(response) - response_length, "%s", line);
+        } else if (strncmp(line, "Attachment: ", 12) == 0) {
+            response_length += snprintf(response + response_length, sizeof(response) - response_length, "  %s\n", line);
+            printf("\n");
         }
     }
     fclose(inbox_file);
 
-    // Prepare response
-    char response[BUF];
-    snprintf(response, sizeof(response), "%d\n", message_count);
-    size_t response_length = strlen(response);
-
-    if (response_length + strlen(buffer) < sizeof(response)) {
-        strncat(response, buffer, sizeof(response) - response_length - 1);
-    } else {
-        printf("DEBUG: Response buffer too small to include all subjects.\n");
+    if (message_count == 0) {
+        response_length += snprintf(response + response_length, sizeof(response) - response_length, "No messages found.\n");
     }
 
-    // Send response to the client
-    printf("DEBUG: Sending LIST response:\n%s", response);
+    // list attachments
+    DIR *dir = opendir(attachment_path);
+    if (dir) {
+        struct dirent *entry;
+        response_length += snprintf(response + response_length, sizeof(response) - response_length, "\nAttachment summary:\n");
+
+        while ((entry = readdir(dir))) {
+            if (entry->d_name[0] != '.') { // ignore '.' and '..'
+                response_length += snprintf(response + response_length, sizeof(response) - response_length, "- %s\n", entry->d_name);
+            }
+        }
+        closedir(dir);
+    } else {
+        response_length += snprintf(response + response_length, sizeof(response) - response_length, "\nNo attachments found.\n");
+    }
+
+    // always send final response to server
     send(client_socket, response, strlen(response), 0);
 }
 
@@ -258,7 +309,7 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Message number for READ: %d\n", message_number);
 
     // 3. Construct Inbox Path
-    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
+    snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
     inbox_file = fopen(user_inbox_path, "r");
 
     if (!inbox_file) {
