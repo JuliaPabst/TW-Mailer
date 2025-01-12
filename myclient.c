@@ -152,7 +152,7 @@ void handleSendCommand(int create_socket) {
             sendMessage(create_socket, "ATTACHMENT_START"); // Signal server to expect attachments
 
                 char file_path[512];
-                printf(">> Enter file path or '.' to finish: ");
+                printf(">> Enter file name (with extension): ");
                 if (fgets(file_path, sizeof(file_path), stdin) != NULL) {
                     file_path[strcspn(file_path, "\n")] = '\0'; // Remove newline
 
@@ -179,6 +179,7 @@ void handleSendCommand(int create_socket) {
             sendMessage(create_socket, "NO_ATTACH");
         }
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleListCommand(int create_socket) {
@@ -219,6 +220,7 @@ void handleListCommand(int create_socket) {
     } else {
         perror("recv error");
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleReadCommand(int create_socket) {
@@ -267,6 +269,7 @@ void handleReadCommand(int create_socket) {
     } else {
         perror("recv error");
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleDelCommand(int create_socket) {
@@ -320,6 +323,7 @@ void handleDelCommand(int create_socket) {
     } else {
         perror("recv error");
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 int main(int argc, char **argv) {

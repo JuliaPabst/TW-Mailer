@@ -5,9 +5,15 @@ Subject: Krawallo
 Hallo
 
 Attachment: attach2.bmp
+From: if23b002
+To: if23b002
+Subject: adasdadsa
+asdasd
+
 ---
 From: if23b002
 To: if23b002
-Subject: Testt
-Hallo
+Subject: kkkk
+adasd
 
+---
