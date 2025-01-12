@@ -64,32 +64,55 @@ int isValidUsername(const char *username) {
 
 int isBlackListed(const char *ip, time_t *remaining_time) {
     FILE *file = fopen(BLACKLIST_FILE, "r");
-    if(!file) {
+    if (!file) {
+        perror("Failed to open blacklist file");
         return 0;
     }
 
     char line[256];
     time_t current_time = time(NULL);
     int blacklisted = 0;
+    time_t latest_blacklist_time = 0; // Track the latest blacklist time
 
-    while(fgets(line, sizeof(line), file)) {
+    printf("DEBUG: Checking blacklist for IP: %s\n", ip);
+
+    while (fgets(line, sizeof(line), file)) {
         char blacklisted_ip[INET_ADDRSTRLEN];
         time_t blacklist_time;
 
-        if (sscanf(line, "%*[^:] - blocked IP: %s %ld", blacklisted_ip, &blacklist_time) == 2) {
+        // Correctly parse the line
+        if (sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
+            printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
+
             if (strcmp(ip, blacklisted_ip) == 0) {
-                if (difftime(current_time, blacklist_time) < BLACKLIST_DURATION) {
-                    blacklisted = 1;
-                    *remaining_time = BLACKLIST_DURATION - difftime(current_time, blacklist_time);
-                    break;
+                // Update the latest blacklist time
+                if (blacklist_time > latest_blacklist_time) {
+                    latest_blacklist_time = blacklist_time;
                 }
             }
+        } else {
+            printf("DEBUG: Failed to parse line: %s\n", line);
         }
     }
 
     fclose(file);
+
+    if (latest_blacklist_time > 0) {
+        double time_diff = difftime(current_time, latest_blacklist_time);
+        if (time_diff < BLACKLIST_DURATION) {
+            *remaining_time = BLACKLIST_DURATION - time_diff;
+            blacklisted = 1;
+            printf("DEBUG: IP %s is blacklisted with remaining time: %.0f seconds\n", ip, (double)*remaining_time);
+        } else {
+            printf("DEBUG: Blacklist duration expired for IP: %s\n", ip);
+        }
+    } else {
+        printf("DEBUG: No matching entry found for IP: %s\n", ip);
+    }
+
     return blacklisted;
 }
+
 
 void addToBlackList(const char *ip) {
     FILE *file = fopen(BLACKLIST_FILE, "a");
@@ -154,7 +177,7 @@ void handleLdapLogin(int client_socket) {
         char error_msg[128];
         snprintf(error_msg, sizeof(error_msg),
                  "ERR\nYour IP is blocked for %.0f seconds.\n", (double)remaining_time);
-        printf("DEBUG: IP %s is blacklisted\n", client_ip);
+        printf("DEBUG: IP %s is blacklisted for %.0f seconds.\n", client_ip, (double)remaining_time);
         send(client_socket, error_msg, strlen(error_msg), 0);
         return;
     }
