@@ -223,7 +223,7 @@ void handleLdapLogin(int client_socket) {
 
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     const char *sender = getSessionUsername(client_socket);
-    char receiver[81], subject[81], message[BUF];
+    char receiver[81], subject[81], message[BUF * 4];  // larger buffer for message
     char buffer[BUF];
     char inbox_path[512];
     char user_dir[256];
@@ -241,12 +241,21 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         return;
     }
 
-    // Read Message
+    // Read Message (including empty lines)
     message[0] = '\0';
-    while (1) {
-        if (readline(client_socket, buffer, sizeof(buffer)) <= 0 || strcmp(buffer, ".") == 0) {
+    while(1) {
+        int bytes_read = readline(client_socket, buffer, sizeof(buffer));
+        if(bytes_read < 0) {
+            send(client_socket, "ERR Reading message failed\n", 28, 0);
+            return;
+        }
+
+        // End of message
+        if(strcmp(buffer, ".") == 0) {
             break;
         }
+
+        // Correctly handle empty lines
         strcat(message, buffer);
         strcat(message, "\n");
     }
@@ -268,7 +277,6 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         return;
     }
     fprintf(inbox_file, "From: %s\nTo: %s\nSubject: %s\n%s\n", sender, receiver, subject, message);
-    
 
     // Process attachments
     if (readline(client_socket, buffer, sizeof(buffer)) > 0 && strcmp(buffer, "ATTACHMENT_START") == 0) {
