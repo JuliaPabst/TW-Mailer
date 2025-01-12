@@ -151,35 +151,39 @@ void handleSendCommand(int create_socket) {
         if (buffer[0] == 'y' || buffer[0] == 'Y') {
             sendMessage(create_socket, "ATTACHMENT_START"); // Signal server to expect attachments
 
-                char file_path[512];
-                printf(">> Enter file name (with extension): ");
-                if (fgets(file_path, sizeof(file_path), stdin) != NULL) {
-                    file_path[strcspn(file_path, "\n")] = '\0'; // Remove newline
+        while (1) { // Loop for retrying invalid file paths
+            char file_path[512];
+            printf(">> Enter file name (with extension): ");
+            if (fgets(file_path, sizeof(file_path), stdin) != NULL) {
+                file_path[strcspn(file_path, "\n")] = '\0'; // Remove newline
 
-                    FILE *file = fopen(file_path, "rb");
-                    if (file) {
-                        char *filename = strrchr(file_path, '/');
-                        filename = filename ? filename + 1 : file_path;
-                        sendMessage(create_socket, filename); // Send filename
+                FILE *file = fopen(file_path, "rb");
+                if (file) {
+                    char *filename = strrchr(file_path, '/');
+                    filename = filename ? filename + 1 : file_path;
+                    sendMessage(create_socket, filename); // Send filename
 
-                        char file_buffer[BUF];
-                        size_t size;
-                        while ((size = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
-                            send(create_socket, file_buffer, size, 0);
-                        }
-                        fclose(file);
-                        printf(">> Attachment %s sent successfully.\n", filename);
-                        sendMessage(create_socket, "ATTACHMENT_END");
-                    } else {
-                        printf(">> Could not open file: %s\n", file_path);
+                    char file_buffer[BUF];
+                    size_t size;
+                    while ((size = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+                        send(create_socket, file_buffer, size, 0);
                     }
+                    fclose(file);
+                    printf(">> Attachment %s sent successfully.\n", filename);
+                    sendMessage(create_socket, "ATTACHMENT_END");
+                    break; // Exit loop after successful attachment
+                } else {
+                    printf(">> Could not open file: %s. Please try again.\n", file_path);
                 }
-            
-        } else {
-            sendMessage(create_socket, "NO_ATTACH");
+            } else {
+                printf(">> Invalid input. Please try again.\n");
+            }
         }
+    } else {
+        sendMessage(create_socket, "NO_ATTACH");
     }
-    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
+}
+memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleListCommand(int create_socket) {
