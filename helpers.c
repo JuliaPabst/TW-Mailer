@@ -1,22 +1,30 @@
 #include "helpers.h"
+#include <dirent.h>
+#include <errno.h>
+#include "ldap_functions.h"
+#include "session_manager.h"
+#include <arpa/inet.h>
+#include <time.h>
 
 
-void signalHandler(int sig) {
-    // Suppress unused parameter warning
-    (void)sig;
+typedef struct {
+    char ip[INET_ADDRSTRLEN];
+    int attempts;
+} LoginAttempt;
 
-    printf("Signal received: %d\n", sig);
-    fflush(stdout);
+LoginAttempt loginAttempts[MAX_ATTEMPTS] = {0};
 
-    // Handle cleanup or graceful shutdown
-    exit(0);
+void getCurrentTimeString(char *buffer, size_t size) {
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(buffer, size, "%a %d.%m.%Y %H:%M:%S", tm_info);
 }
 
 int readline(int socket, char *buffer, size_t size) {
     size_t i = 0;
     char c;
 
-    while (i < size - 1) { // Reserve space for null terminator
+    while(i < size - 1) { // Reserve space for null terminator
         ssize_t bytes = recv(socket, &c, 1, 0);
         if (bytes == -1) {
             perror("recv error");
@@ -42,55 +50,173 @@ int readline(int socket, char *buffer, size_t size) {
 }
 
 int isValidUsername(const char *username) {
-    if (strlen(username) > 8) return 0;
-    for (size_t i = 0; i < strlen(username); ++i) {
-        if (!isalnum(username[i])) return 0;
+    if(strlen(username) > 8) return 0;
+    for(size_t i = 0; i < strlen(username); ++i) {
+        if(!isalnum(username[i])) return 0;
     }
     return 1;
 }
 
-void handleLdapLogin(int client_socket) {
-    int size;
+int isBlackListed(const char *ip, time_t *remaining_time) {
+    FILE *file = fopen(BLACKLIST_FILE, "r");
+    if (!file) {
+        perror("Failed to open blacklist file");
+        return 0;
+    }
 
-    printf("Starting to log in\n");
+    char line[256];
+    time_t current_time = time(NULL);
+    int blacklisted = 0;
+    time_t latest_blacklist_time = 0; // Track the latest blacklist time
+
+    printf("DEBUG: Checking blacklist for IP: %s\n", ip);
+
+    while (fgets(line, sizeof(line), file)) {
+        char blacklisted_ip[INET_ADDRSTRLEN];
+        time_t blacklist_time;
+
+        // Correctly parse the line
+        if (sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
+            // printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
+
+            if (strcmp(ip, blacklisted_ip) == 0) {
+                // Update the latest blacklist time
+                if (blacklist_time > latest_blacklist_time) {
+                    latest_blacklist_time = blacklist_time;
+                }
+            }
+        } else {
+            printf("DEBUG: Failed to parse line: %s\n", line);
+        }
+    }
+
+    fclose(file);
+
+    if (latest_blacklist_time > 0) {
+        double time_diff = difftime(current_time, latest_blacklist_time);
+        if (time_diff < BLACKLIST_DURATION) {
+            *remaining_time = BLACKLIST_DURATION - time_diff;
+            blacklisted = 1;
+            printf("DEBUG: IP %s is blacklisted with remaining time: %.0f seconds\n", ip, (double)*remaining_time);
+        } else {
+            printf("DEBUG: Blacklist duration expired for IP: %s\n", ip);
+        }
+    } else {
+        printf("DEBUG: No matching entry found for IP: %s\n", ip);
+    }
+
+    return blacklisted;
+}
+
+
+void addToBlackList(const char *ip) {
+    FILE *file = fopen(BLACKLIST_FILE, "a");
+    if (!file) {
+        perror("Failed to open blacklist file");
+        return;
+    }
+
+    char time_str[64];
+    getCurrentTimeString(time_str, sizeof(time_str));
+
+    fprintf(file, "%s - blocked IP: %s %ld\n", time_str, ip, time(NULL));
+    fclose(file);
+}
+
+void resetLoginAttempts(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            loginAttempts[i].attempts = 0;
+            break;
+        }
+    }
+}
+
+
+void recordFailedAttempt(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            loginAttempts[i].attempts++;
+            return;
+        }
+
+        if(loginAttempts[i].ip[0] == '\0') {
+            strncpy(loginAttempts[i].ip, ip, INET_ADDRSTRLEN);
+            loginAttempts[i].attempts = 1;
+            return;
+        }
+    }
+}
+
+int getFailedAttempts(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            return loginAttempts[i].attempts;
+        }
+    }
+
+    return 0;
+}
+
+void handleLdapLogin(int client_socket) {
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    getpeername(client_socket, (struct sockaddr *)&addr, &addr_len);
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
+
+    printf("DEBUG: Received LOGIN command from IP: %s\n", client_ip);
+
+    char buffer[256];
+    time_t remaining_time = 0;
+    if(isBlackListed(client_ip, &remaining_time)) {
+        char error_msg[128];
+        snprintf(error_msg, sizeof(error_msg),
+                 "ERR\nYour IP is blocked for %.0f seconds.\n", (double)remaining_time);
+        printf("DEBUG: IP %s is blacklisted for %.0f seconds.\n", client_ip, (double)remaining_time);
+        send(client_socket, error_msg, strlen(error_msg), 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        return;
+    }
 
     char username[256];
-    size = recv(client_socket, username, sizeof(username) - 1, 0);
-    if (size <= 0) {
-        send(client_socket, "ERR Invalid Username\n", 24, 0);
-        return;
-    }
-    printf("Username: %s", username);
+    recv(client_socket, username, sizeof(username) - 1, 0);
+    username[strcspn(username, "\n")] = 0;
+    printf("DEBUG: Received Username: %s\n", username);
 
     char password[256];
-    size = recv(client_socket, password, sizeof(password) - 1, 0);
-    if (size <= 0) {
-        send(client_socket, "ERR Invalid password\n", 24, 0);
-        return;
-    }
-    printf("password: %s", password);
+    recv(client_socket, password, sizeof(password) - 1, 0);
+    password[strcspn(password, "\n")] = 0;
+    printf("DEBUG: Received Password\n");
 
-    // Search for the DN using the username
     char *retrievedUsername = ldapFind(username, password);
-    if (!retrievedUsername) {
-        fprintf(stderr, "Failed to retrieve username\n");
-        send(client_socket, "ERR Unable to retrieve username\n", 32, 0);
+    if(!retrievedUsername || strcmp(retrievedUsername, "FAILED") == 0) {
+        recordFailedAttempt(client_ip);
+        int attempts_left = MAX_ATTEMPTS - getFailedAttempts(client_ip);
+
+        if(attempts_left <= 0) {
+            addToBlackList(client_ip);
+            printf("DEBUG: 3 Failed attempts! IP %s is blacklisted\n", client_ip);
+            send(client_socket, "ERR\nToo many failed attempts. Try again in 1 minute.\n", 55, 0);
+            resetLoginAttempts(client_ip);
+        } else {
+            char error_msg[128];
+            snprintf(error_msg, sizeof(error_msg),
+                     "ERR\nInvalid credentials.\nYou have %d more attempt%s left.\n",
+                     attempts_left, (attempts_left == 1) ? "" : "s");
+            printf("DEBUG: Invalid credentials. %d attempts left for IP %s\n", attempts_left, client_ip);
+            send(client_socket, error_msg, strlen(error_msg), 0);
+        }
         return;
     }
 
-    //Save the username in session
+    resetLoginAttempts(client_ip);
     addSession(client_socket, retrievedUsername);
-
-    // Print the retrieved username for debugging
     printf("Retrieved Username: %s\n", retrievedUsername);
+    send(client_socket, "OK\nLogin successful.\n", 22, 0);
 
-    // Send the formatted message to the client
-    send(client_socket, retrievedUsername, strlen(retrievedUsername), 0);
-
-    printf("DEBUG");
-    // Free the memory allocated by ldapFind if necessary
-    if(retrievedUsername != NULL){
-         printf("DEBUG!");
+    if (retrievedUsername != NULL) {
         free(retrievedUsername);
     }
 }
@@ -411,6 +537,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Message number for DEL: %d\n", message_number);
 
     // 2. Construct Inbox Path
+
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
     inbox_file = fopen(user_inbox_path, "r");
     if (!inbox_file) {
@@ -490,6 +617,7 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Message number %d deleted successfully for user %s.\n", message_number, username);
     send(client_socket, "OK\nMessage deleted successfully.\n", 33, 0);
 }
+
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
     int client_socket = *(int *)data; // Client socket
