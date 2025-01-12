@@ -66,9 +66,7 @@ char *handleLoginCommand(int create_socket) {
 
     
     sendMessage(create_socket, password);
-    printf("Sent username: %s \n", username);
-    printf("Password successfully read\n");
-
+        
     // Wait for server response
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
@@ -224,24 +222,15 @@ void handleReadCommand(int create_socket) {
     }
 }
 
-void handleDelCommand(int create_socket, char *username) {
+void handleDelCommand(int create_socket) {
     char buffer[BUF];
     int size;
 
     sendMessage(create_socket, "DEL");
 
-   // Send the username as the sender
-    if (isValidInput(username, 8)) {
-        printf("Sender: %s", username);
-        sendMessage(create_socket, username); // Send username as the sender
-    } else {
-        printf("Invalid username passed as sender!\n");
-        sendMessage(create_socket, "ERR"); // Notify server of an error
-        return;
-    }
-
     // Ask and validate message number
     while (1) {
+        memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         printf(">> Message number: ");
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
@@ -258,6 +247,7 @@ void handleDelCommand(int create_socket, char *username) {
     }
 
     // Get the response from the server
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
         buffer[size] = '\0'; // Terminate string
@@ -271,7 +261,7 @@ void handleDelCommand(int create_socket, char *username) {
             }
         } else if (strncmp(buffer, "OK", 2) == 0) {
             char *success_msg = strchr(buffer, '\n'); 
-            printf("<< OK\n");
+            printf("<< OK\nMessage deleted successfully\n");
             if (success_msg) {
                 printf("<< %s\n", success_msg + 1); 
             }
@@ -387,7 +377,7 @@ int main(int argc, char **argv) {
                 } else if (strcmp(buffer, "READ") == 0) {
                     handleReadCommand(create_socket);
                 } else if (strcmp(buffer, "DEL") == 0) {
-                    handleDelCommand(create_socket, username);
+                    handleDelCommand(create_socket);
                 }
 
                 memset(buffer, 0, sizeof(buffer)); // Clear buffer                

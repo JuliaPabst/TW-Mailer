@@ -348,7 +348,8 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
 
     printf("DEBUG: Username for DEL: %s\n", username);
 
-    // 2. Read Message Number
+    // 1. Read Message Number
+    memset(message_number_str, 0, sizeof(message_number_str));
     if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
         sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
         printf("DEBUG: Invalid or missing message number received.\n");
@@ -357,72 +358,87 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     }
     printf("DEBUG: Message number for DEL: %d\n", message_number);
 
-    // 3. Construct Inbox Path
+    // 2. Construct Inbox Path
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
-
     inbox_file = fopen(user_inbox_path, "r");
     if (!inbox_file) {
         printf("DEBUG: Inbox file not found for user %s.\n", username);
-        char error_msg[BUF];
-        snprintf(error_msg, sizeof(error_msg), "ERR\nInbox file not found for user %s.\n", username);
-        send(client_socket, error_msg, strlen(error_msg), 0);
+        send(client_socket, "ERR\nInbox file not found.\n", 28, 0);
         return;
     }
 
-    // 4. Create Temporary File
+    // 3. Count total messages
+    int total_messages = 0;
+    char line[BUF];
+    while (fgets(line, sizeof(line), inbox_file)) {
+        if (strncmp(line, "---", 3) == 0) {
+            total_messages++;
+        }
+    }
+    rewind(inbox_file);  // Set file pointer back to the beginning
+
+    // 4. Validate message number
+    if (message_number > total_messages) {
+        printf("DEBUG: Message number %d does not exist. Total messages: %d\n", message_number, total_messages);
+        send(client_socket, "ERR\nMessage number does not exist.\n", 36, 0);
+        fclose(inbox_file);
+        return;
+    }
+
+    // 5. Create Temporary File
     snprintf(buffer, sizeof(buffer), "%s/temp_inbox.txt", mail_spool_dir);
     temp_file = fopen(buffer, "w");
     if (!temp_file) {
         perror("DEBUG: Failed to create temp file");
         fclose(inbox_file);
-        send(client_socket, "ERR\nFailed to create temporary file.\n", 40, 0);
+        send(client_socket, "ERR\nFailed to create temporary file.\n", 38, 0);
         return;
     }
 
-    // 5. Locate and Remove the Specific Message
+    // 6. Locate and Remove the Specific Message
     int current_message = 1;
     int found = 0;
-    char line[BUF];
+    int skip = 0;
 
     while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "---", 3) == 0) { // Message boundary
+        if (strncmp(line, "---", 3) == 0) {
             current_message++;
+            skip = 0;
         }
 
         if (current_message == message_number) {
             found = 1;
-            continue; // Skip lines of the target message
+            skip = 1;  // Skip lines of the target message
+            continue;
         }
 
-        fputs(line, temp_file); // Write lines of other messages to temp file
+        if (!skip) {
+            fputs(line, temp_file);
+        }
     }
 
     fclose(inbox_file);
     fclose(temp_file);
 
+    // 7. Handle case if message was not found
     if (!found) {
         printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
-        remove(buffer); // Delete temp file
-        char error_msg[BUF];
-        snprintf(error_msg, sizeof(error_msg), "ERR\nMessage number %d not found for user %s.\n",
-                 message_number, username);
-        send(client_socket, error_msg, strlen(error_msg), 0);
+        remove(buffer);
+        send(client_socket, "ERR\nMessage number not found.\n", 32, 0);
         return;
     }
 
-    // 6. Replace Original File with Temp File
+    // 8. Replace Original File with Temp File
     if (rename(buffer, user_inbox_path) != 0) {
         perror("DEBUG: Failed to replace inbox file");
-        send(client_socket, "ERR\nFailed to update inbox file.\n", 35, 0);
+        send(client_socket, "ERR\nFailed to update inbox file.\n", 34, 0);
         return;
     }
 
     printf("DEBUG: Message number %d deleted successfully for user %s.\n", message_number, username);
-    char success_msg[BUF];
-    snprintf(success_msg, sizeof(success_msg), "OK\nMessage number %d deleted successfully for user %s.\n",
-             message_number, username);
-    send(client_socket, success_msg, strlen(success_msg), 0);
+    send(client_socket, "OK\nMessage deleted successfully.\n", 33, 0);
 }
+
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
     int client_socket = *(int *)data; // Client socket
