@@ -1,0 +1,20 @@
+From: if23b002
+To: if23b002
+Subject: Hallo
+Krawallo
+
+---
+From: if23b002
+To: if23b002
+Subject: Krawallo
+Hallo
+
+Attachment: attach2.bmp
+---
+From: if23b002
+To: if23b002
+Subject: Drei
+drei
+
+Attachment: attach4.xlsx
+---
