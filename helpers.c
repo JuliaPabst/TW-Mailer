@@ -347,7 +347,6 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     }
     fprintf(inbox_file, "---\n");
     fclose(inbox_file);
-    send(client_socket, "OK\n", 3, 0);
 }
 
 void handleListCommand(int client_socket, const char *mail_spool_dir) {

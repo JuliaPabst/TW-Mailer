@@ -171,6 +171,7 @@ void handleSendCommand(int create_socket) {
                     fclose(file);
                     printf(">> Attachment %s sent successfully.\n", filename);
                     sendMessage(create_socket, "ATTACHMENT_END");
+                    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
                     break; // Exit loop after successful attachment
                 } else {
                     printf(">> Could not open file: %s. Please try again.\n", file_path);
@@ -192,6 +193,8 @@ void handleListCommand(int create_socket) {
 
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
+
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 
     // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
