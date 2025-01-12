@@ -537,7 +537,6 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Message number for DEL: %d\n", message_number);
 
     // 2. Construct Inbox Path
-
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s/inbox.txt", mail_spool_dir, username);
     inbox_file = fopen(user_inbox_path, "r");
     if (!inbox_file) {
@@ -575,24 +574,31 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     }
 
     // 6. Locate and Remove the Specific Message
-    int current_message = 0;
+    int current_message = 1;
     int found = 0;
-    int skip = 0;
+    int deleting = 0;
 
-    while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "---", 3) == 0) {
-            current_message++;
-            skip = 0;
+    while(fgets(line, sizeof(line), inbox_file)) {
+        if(strncmp(line, "From: ", 6) == 0) {
+            if(current_message == message_number) {
+                found = 1;
+                deleting = 1;  // Start deleting this message
+                continue;      // Skip "From:" line
+            }
         }
 
-        if (current_message == message_number) {
-            found = 1;
-            skip = 1;  // Skip lines of the target message
-            continue;
+        if(strncmp(line, "---", 3) == 0) {
+            if(deleting) {
+                deleting = 0;  // Stop deleting after the separator
+                current_message++;
+                continue;      // Skip separator
+            } else {
+                current_message++;
+            }
         }
 
-        if (!skip) {
-            fputs(line, temp_file);
+        if(!deleting) {
+            fputs(line, temp_file);  // Write only non-deleted messages
         }
     }
 
