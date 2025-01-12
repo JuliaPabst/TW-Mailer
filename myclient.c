@@ -396,6 +396,7 @@ int main(int argc, char **argv) {
 
     do {
         printf(">> ");
+        memset(buffer, 0, sizeof(buffer)); // Clear buffer 
         if (fgets(buffer, BUF - 1, stdin) != NULL) {
             size = strlen(buffer);
 

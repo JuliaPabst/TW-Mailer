@@ -289,10 +289,6 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
                 return;
             }
 
-            if (strcmp(attachment_name, ".") == 0) {
-                break; // No more attachments
-            }
-
             char attachment_path[1024];
             snprintf(attachment_path, sizeof(attachment_path), "%s/%s", attachment_dir, attachment_name);
             FILE *attachment_file = fopen(attachment_path, "wb");
@@ -337,16 +333,15 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
                     break;
                 }
             }
-
             fclose(attachment_file);
             fprintf(inbox_file, "Attachment: %s\n", attachment_name);
-            send(client_socket, "OK\n", 3, 0); // Always send a final response to the client
             printf("DEBUG: Message and attachments saved successfully.\n");
             break;
         }
     }
     fprintf(inbox_file, "---\n");
     fclose(inbox_file);
+    send(client_socket, "OK\n", 3, 0); // Always send a final response to the client
 }
 
 void handleListCommand(int client_socket, const char *mail_spool_dir) {
