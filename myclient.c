@@ -43,7 +43,6 @@ char *handleLoginCommand(int create_socket) {
     }
 
     sendMessage(create_socket, username);
-    printf("Sent username: %s \n", username);
 
     // Prompt for password (hides input)
     printf(">> LDAP Password: ");

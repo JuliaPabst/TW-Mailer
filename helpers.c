@@ -82,7 +82,7 @@ int isBlackListed(const char *ip, time_t *remaining_time) {
 
         // Correctly parse the line
         if (sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
-            printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
+            // printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
 
             if (strcmp(ip, blacklisted_ip) == 0) {
                 // Update the latest blacklist time
@@ -204,6 +204,7 @@ void handleLdapLogin(int client_socket) {
             addToBlackList(client_ip);
             printf("DEBUG: 3 Failed attempts! IP %s is blacklisted\n", client_ip);
             send(client_socket, "ERR\nToo many failed attempts. Try again in 1 minute.\n", 55, 0);
+            resetLoginAttempts(client_ip);
         } else {
             char error_msg[128];
             snprintf(error_msg, sizeof(error_msg),
