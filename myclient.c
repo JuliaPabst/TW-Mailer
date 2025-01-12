@@ -66,7 +66,7 @@ char *handleLoginCommand(int create_socket) {
 
     
     sendMessage(create_socket, password);
-        
+
     // Wait for server response
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
@@ -143,9 +143,7 @@ void handleListCommand(int create_socket) {
     // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (size > 0) {
-        buffer[size] = '\0';
-        printf("DEBUG: Received server response: '%s'\n", buffer);
-    
+        buffer[size] = '\0';    
 
         // Check if response indicates no messages
         char *line = strtok(buffer, "\n");
