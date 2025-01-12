@@ -23,7 +23,7 @@ char *handleLoginCommand(int create_socket);
 void handleSendCommand(int create_socket);
 void handleListCommand(int create_socket);
 void handleReadCommand(int create_socket);
-void handleDelCommand(int create_socket, char *username);
+void handleDelCommand(int create_socket);
 
 
 #endif // MYCLIENT_H

@@ -1,8 +1,3 @@
-From: if23b002
-To: if23b002
-Subject: Hallo
-Krawallo
-
 ---
 From: if23b002
 To: if23b002
@@ -13,8 +8,6 @@ Attachment: attach2.bmp
 ---
 From: if23b002
 To: if23b002
-Subject: Drei
-drei
+Subject: Testt
+Hallo
 
-Attachment: attach4.xlsx
----
