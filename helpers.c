@@ -20,6 +20,20 @@ void getCurrentTimeString(char *buffer, size_t size) {
     strftime(buffer, size, "%a %d.%m.%Y %H:%M:%S", tm_info);
 }
 
+void handleHelpCommand(int client_socket) {
+    const char *help_message =
+        "Available commands:\n"
+        "-------------------\n"
+        "LOGIN   : Log in with LDAP credentials.\n"
+        "SEND    : Send a message with optional attachment.\n"
+        "LIST    : List all received messages.\n"
+        "READ    : Read a message by its number.\n"
+        "DEL     : Delete a message by its number.\n"
+        "QUIT    : Disconnect and exit.\n";
+
+    send(client_socket, help_message, strlen(help_message), 0);
+}
+
 int readline(int socket, char *buffer, size_t size) {
     size_t i = 0;
     char c;
@@ -633,7 +647,7 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
 
     ////////////////////////////////////////////////////////////////////////////
    // SEND welcome message
-   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n\n");
+   strcpy(buffer, "Welcome to TWMailer!\r\nPlease enter your commands...\r\n\n");
    if(send(client_socket, buffer, strlen(buffer), 0) == -1)
    {
       perror("send failed");
@@ -678,6 +692,10 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             // Process the DEL command
             printf("Receive DEL command\n");
             handleDelCommand(client_socket, mail_spool_dir);
+        } else if(strcmp(buffer, "HELP") == 0) {
+            // Process the HELP command
+            printf("Receive HELP command\n");
+            handleHelpCommand(client_socket);
         } else {
             // Unknown command
             printf("Unknown command received: %s\n", buffer);

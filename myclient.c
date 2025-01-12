@@ -381,6 +381,7 @@ int main(int argc, char **argv) {
     }
 
     printf("Connection with server (%s:%d) established\n", ip, port);
+    printf("\nType HELP to see available commands.\n\n");
 
     ////////////////////////////////////////////////////////////////////////////
     // RECEIVE DATA
