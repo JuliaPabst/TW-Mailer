@@ -11,10 +11,30 @@
 #include <errno.h>
 #include "helpers.h"
 #include "ldap_functions.h"
+#include <pthread.h>
 
 int abortRequested = 0;
 int create_socket = -1;
-int new_socket = -1;
+
+// Struct for delivering data to the thread
+typedef struct {
+    int client_socket;
+    const char *mail_spool_dir;
+} ThreadData;
+
+void *clientHandler(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    clientCommunication(&(data->client_socket), data->mail_spool_dir);
+    free(data);
+    pthread_exit(NULL);
+}
+
+// Signal handler for clean shutdown
+void signalHandler(int sig) {
+    printf("Signal %d received. Shutting down now...\n", sig);
+    abortRequested = 1;
+    close(create_socket);
+}
 
 int main(int argc, char **argv) {
     socklen_t addrlen;
@@ -35,39 +55,22 @@ int main(int argc, char **argv) {
     }
 
     mail_spool_dir = argv[2];
-    struct stat dir_stat;
-    if (stat(mail_spool_dir, &dir_stat) == -1) {
-        if (errno == ENOENT) {
-            if (mkdir(mail_spool_dir, 0755) == -1) {
-                perror("Failed to create mail spool directory");
-                return EXIT_FAILURE;
-            }
-        } else {
-            perror("Failed to access mail spool directory");
-            return EXIT_FAILURE;
-        }
-    } else if (!S_ISDIR(dir_stat.st_mode)) {
-        fprintf(stderr, "Specified mail spool path is not a directory: %s\n", mail_spool_dir);
+
+    // Signal handler registration (Ctrl+C catch)
+    if(signal(SIGINT, signalHandler) == SIG_ERR) {
+        perror("Signal cannot be registered");
         return EXIT_FAILURE;
     }
 
-    if (signal(SIGINT, signalHandler) == SIG_ERR) {
-        perror("signal can not be registered");
-        return EXIT_FAILURE;
-    }
-
-    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    // Socket creation
+    if((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("Socket error");
         return EXIT_FAILURE;
     }
 
-    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
+    // Set socket options
+    if(setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
         perror("set socket options - reuseAddr");
-        return EXIT_FAILURE;
-    }
-
-    if (setsockopt(create_socket, SOL_SOCKET, SO_REUSEADDR, &reuseValue, sizeof(reuseValue)) == -1) {
-        perror("set socket options - reusePort");
         return EXIT_FAILURE;
     }
 
@@ -76,11 +79,13 @@ int main(int argc, char **argv) {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
+    // Bind socket to address
     if (bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("bind error");
         return EXIT_FAILURE;
     }
 
+    // Listen for incoming connections
     if (listen(create_socket, 5) == -1) {
         perror("listen error");
         return EXIT_FAILURE;
@@ -92,31 +97,45 @@ int main(int argc, char **argv) {
         printf("Waiting for connections...\n");
 
         addrlen = sizeof(struct sockaddr_in);
-        if ((new_socket = accept(create_socket, (struct sockaddr *)&cliaddress, &addrlen)) == -1) {
-            if (abortRequested) {
-                perror("accept error after aborted");
-            } else {
-                perror("accept error");
-            }
-            break;
+
+        int *new_socket = malloc(sizeof(int));
+        *new_socket = accept(create_socket, (struct sockaddr *)&cliaddress, &addrlen);
+        
+        if(*new_socket == -1) {
+            perror("accept error");
+            free(new_socket);
+            continue;
         }
 
         printf("Client connected from %s:%d...\n",
                inet_ntoa(cliaddress.sin_addr),
                ntohs(cliaddress.sin_port));
-        clientCommunication(&new_socket, mail_spool_dir);
-        new_socket = -1;
+
+        ThreadData *thread_data = malloc(sizeof(ThreadData));
+        if(thread_data == NULL) {
+            perror("Failed to allocate memory for thread data");
+            close(*new_socket);
+            free(new_socket);
+            continue;
+        }
+
+        thread_data->client_socket = *new_socket;
+        thread_data->mail_spool_dir = mail_spool_dir;
+
+        pthread_t thread;
+        if(pthread_create(&thread, NULL, clientHandler, (void *)thread_data) != 0) {
+            perror("Failedd to create thread");
+            close(*new_socket);
+            free(thread_data);
+            continue;
+        }
+
+        pthread_detach(thread);
     }
 
-    if (create_socket != -1) {
-        if (shutdown(create_socket, SHUT_RDWR) == -1) {
-            perror("shutdown create_socket");
-        }
-        if (close(create_socket) == -1) {
-            perror("close create_socket");
-        }
-        create_socket = -1;
+    if(create_socket != -1) {
+        close(create_socket);
     }
-
+    printf("Server shut down.\n");
     return EXIT_SUCCESS;
 }

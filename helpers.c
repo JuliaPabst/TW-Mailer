@@ -10,17 +10,6 @@
 #include "ldap_functions.h"
 #include "session_manager.h"
 
-void signalHandler(int sig) {
-    // Suppress unused parameter warning
-    (void)sig;
-
-    printf("Signal received: %d\n", sig);
-    fflush(stdout);
-
-    // Handle cleanup or graceful shutdown
-    exit(0);
-}
-
 int readline(int socket, char *buffer, size_t size) {
     size_t i = 0;
     char c;
