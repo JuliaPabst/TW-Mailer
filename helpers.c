@@ -172,6 +172,7 @@ void handleLdapLogin(int client_socket) {
 
     printf("DEBUG: Received LOGIN command from IP: %s\n", client_ip);
 
+    char buffer[256];
     time_t remaining_time = 0;
     if(isBlackListed(client_ip, &remaining_time)) {
         char error_msg[128];
@@ -179,6 +180,8 @@ void handleLdapLogin(int client_socket) {
                  "ERR\nYour IP is blocked for %.0f seconds.\n", (double)remaining_time);
         printf("DEBUG: IP %s is blacklisted for %.0f seconds.\n", client_ip, (double)remaining_time);
         send(client_socket, error_msg, strlen(error_msg), 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         return;
     }
 

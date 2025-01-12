@@ -400,9 +400,6 @@ int main(int argc, char **argv) {
             }
 
             isQuit = strcmp(buffer, "QUIT") == 0;
-            if(username != NULL){
-                free(username);
-            }
 
             // Send other commands to the server
             sendMessage(create_socket, buffer);
