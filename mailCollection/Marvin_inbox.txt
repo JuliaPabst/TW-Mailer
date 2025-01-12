@@ -1,0 +1,64 @@
+From: if23b002
+To: Marvin
+Subject: Mave
+
+---
+From: if23b002
+To: Marvin
+Subject: Test
+Test
+Test
+
+---
+From: if23b002
+To: Marvin
+Subject: TEst3
+This
+is a dritter Test
+
+---
+From: if23b002
+To: Marvin
+Subject: Test100
+This
+is
+a
+Test!
+
+---
+From: if23b002
+To: Marvin
+Subject: Test
+test
+test
+test
+
+---
+From: if23b002
+To: Marvin
+Subject: TEst2
+test
+test
+test
+
+---
+From: if23b002
+To: Marvin
+Subject: Hiho
+Hiho
+
+---
+From: if23b002
+To: Marvin
+Subject: Hiho2
+Hiho2
+
+---
+From: if23b002
+To: Marvin
+Subject: aaa
+asdn
+adsas
+dasd
+
+---

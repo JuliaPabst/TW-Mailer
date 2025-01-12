@@ -7,23 +7,29 @@
 #include "helpers.h"
 #include <dirent.h>
 #include <errno.h>
+#include "ldap_functions.h"
+#include "session_manager.h"
+#include <arpa/inet.h>
+#include <time.h>
 
-void signalHandler(int sig) {
-    // Suppress unused parameter warning
-    (void)sig;
+typedef struct {
+    char ip[INET_ADDRSTRLEN];
+    int attempts;
+} LoginAttempt;
 
-    printf("Signal received: %d\n", sig);
-    fflush(stdout);
+LoginAttempt loginAttempts[MAX_ATTEMPTS] = {0};
 
-    // Handle cleanup or graceful shutdown
-    exit(0);
+void getCurrentTimeString(char *buffer, size_t size) {
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(buffer, size, "%a %d.%m.%Y %H:%M:%S", tm_info);
 }
 
 int readline(int socket, char *buffer, size_t size) {
     size_t i = 0;
     char c;
 
-    while (i < size - 1) { // Reserve space for null terminator
+    while(i < size - 1) { // Reserve space for null terminator
         ssize_t bytes = recv(socket, &c, 1, 0);
         if (bytes == -1) {
             perror("recv error");
@@ -36,7 +42,7 @@ int readline(int socket, char *buffer, size_t size) {
             break;
         }
 
-        if (c == '\0') {
+        if (c == '\0' || c == '\n') {
             break; // End of line
         }
 
@@ -49,27 +55,183 @@ int readline(int socket, char *buffer, size_t size) {
 }
 
 int isValidUsername(const char *username) {
-    if (strlen(username) > 8) return 0;
-    for (size_t i = 0; i < strlen(username); ++i) {
-        if (!isalnum(username[i])) return 0;
+    if(strlen(username) > 8) return 0;
+    for(size_t i = 0; i < strlen(username); ++i) {
+        if(!isalnum(username[i])) return 0;
     }
     return 1;
 }
 
+int isBlackListed(const char *ip, time_t *remaining_time) {
+    FILE *file = fopen(BLACKLIST_FILE, "r");
+    if (!file) {
+        perror("Failed to open blacklist file");
+        return 0;
+    }
+
+    char line[256];
+    time_t current_time = time(NULL);
+    int blacklisted = 0;
+    time_t latest_blacklist_time = 0; // Track the latest blacklist time
+
+    printf("DEBUG: Checking blacklist for IP: %s\n", ip);
+
+    while (fgets(line, sizeof(line), file)) {
+        char blacklisted_ip[INET_ADDRSTRLEN];
+        time_t blacklist_time;
+
+        // Correctly parse the line
+        if (sscanf(line, "%*s %*s %*s - blocked IP: %15s %ld", blacklisted_ip, &blacklist_time) == 2) {
+            // printf("DEBUG: Parsed IP: %s, Time: %ld\n", blacklisted_ip, blacklist_time);
+
+            if (strcmp(ip, blacklisted_ip) == 0) {
+                // Update the latest blacklist time
+                if (blacklist_time > latest_blacklist_time) {
+                    latest_blacklist_time = blacklist_time;
+                }
+            }
+        } else {
+            printf("DEBUG: Failed to parse line: %s\n", line);
+        }
+    }
+
+    fclose(file);
+
+    if (latest_blacklist_time > 0) {
+        double time_diff = difftime(current_time, latest_blacklist_time);
+        if (time_diff < BLACKLIST_DURATION) {
+            *remaining_time = BLACKLIST_DURATION - time_diff;
+            blacklisted = 1;
+            printf("DEBUG: IP %s is blacklisted with remaining time: %.0f seconds\n", ip, (double)*remaining_time);
+        } else {
+            printf("DEBUG: Blacklist duration expired for IP: %s\n", ip);
+        }
+    } else {
+        printf("DEBUG: No matching entry found for IP: %s\n", ip);
+    }
+
+    return blacklisted;
+}
+
+
+void addToBlackList(const char *ip) {
+    FILE *file = fopen(BLACKLIST_FILE, "a");
+    if (!file) {
+        perror("Failed to open blacklist file");
+        return;
+    }
+
+    char time_str[64];
+    getCurrentTimeString(time_str, sizeof(time_str));
+
+    fprintf(file, "%s - blocked IP: %s %ld\n", time_str, ip, time(NULL));
+    fclose(file);
+}
+
+void resetLoginAttempts(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            loginAttempts[i].attempts = 0;
+            break;
+        }
+    }
+}
+
+
+void recordFailedAttempt(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            loginAttempts[i].attempts++;
+            return;
+        }
+
+        if(loginAttempts[i].ip[0] == '\0') {
+            strncpy(loginAttempts[i].ip, ip, INET_ADDRSTRLEN);
+            loginAttempts[i].attempts = 1;
+            return;
+        }
+    }
+}
+
+int getFailedAttempts(const char *ip) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(strcmp(loginAttempts[i].ip, ip) == 0) {
+            return loginAttempts[i].attempts;
+        }
+    }
+
+    return 0;
+}
+
+void handleLdapLogin(int client_socket) {
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    getpeername(client_socket, (struct sockaddr *)&addr, &addr_len);
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
+
+    printf("DEBUG: Received LOGIN command from IP: %s\n", client_ip);
+
+    char buffer[256];
+    time_t remaining_time = 0;
+    if(isBlackListed(client_ip, &remaining_time)) {
+        char error_msg[128];
+        snprintf(error_msg, sizeof(error_msg),
+                 "ERR\nYour IP is blocked for %.0f seconds.\n", (double)remaining_time);
+        printf("DEBUG: IP %s is blacklisted for %.0f seconds.\n", client_ip, (double)remaining_time);
+        send(client_socket, error_msg, strlen(error_msg), 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        return;
+    }
+
+    char username[256];
+    recv(client_socket, username, sizeof(username) - 1, 0);
+    username[strcspn(username, "\n")] = 0;
+    printf("DEBUG: Received Username: %s\n", username);
+
+    char password[256];
+    recv(client_socket, password, sizeof(password) - 1, 0);
+    password[strcspn(password, "\n")] = 0;
+    printf("DEBUG: Received Password\n");
+
+    char *retrievedUsername = ldapFind(username, password);
+    if(!retrievedUsername || strcmp(retrievedUsername, "FAILED") == 0) {
+        recordFailedAttempt(client_ip);
+        int attempts_left = MAX_ATTEMPTS - getFailedAttempts(client_ip);
+
+        if(attempts_left <= 0) {
+            addToBlackList(client_ip);
+            printf("DEBUG: 3 Failed attempts! IP %s is blacklisted\n", client_ip);
+            send(client_socket, "ERR\nToo many failed attempts. Try again in 1 minute.\n", 55, 0);
+            resetLoginAttempts(client_ip);
+        } else {
+            char error_msg[128];
+            snprintf(error_msg, sizeof(error_msg),
+                     "ERR\nInvalid credentials.\nYou have %d more attempt%s left.\n",
+                     attempts_left, (attempts_left == 1) ? "" : "s");
+            printf("DEBUG: Invalid credentials. %d attempts left for IP %s\n", attempts_left, client_ip);
+            send(client_socket, error_msg, strlen(error_msg), 0);
+        }
+        return;
+    }
+
+    resetLoginAttempts(client_ip);
+    addSession(client_socket, retrievedUsername);
+    printf("Retrieved Username: %s\n", retrievedUsername);
+    send(client_socket, "OK\nLogin successful.\n", 22, 0);
+
+    if (retrievedUsername != NULL) {
+        free(retrievedUsername);
+    }
+}
+
 void handleSendCommand(int client_socket, const char *mail_spool_dir) {
-    char sender[81], receiver[81], subject[81], message[BUF];
+    const char *sender = getSessionUsername(client_socket);
+    char receiver[81], subject[81], message[BUF];
     char buffer[BUF];
     char inbox_path[256];
     FILE *inbox_file;
-
-    // Read Sender
-    if (readline(client_socket, sender, sizeof(sender)) <= 0 || !isValidUsername(sender)) {
-        printf("DEBUG: Invalid or missing sender received.\n");
-        send(client_socket, "Sender username was invalid (should not be longer than 8 characters) or missing.\n", 4, 0);
-        return;
-    } else {
-        send(client_socket, "Sender received\n", 4, 0);
-    }
 
     printf("DEBUG: Sender: %s\n", sender); // Debug sender
 
@@ -102,10 +264,11 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
         printf("DEBUG: Message line received: '%s'\n", buffer); // Debug message line
 
-        if (strcmp(buffer, ".") == 0) { // End of message detected
+        if (strcmp(buffer, ".") == 0) {
             printf("DEBUG: End of message detected.\n");
             break;
         }
+
 
         if (strlen(message) + strlen(buffer) + 2 >= BUF) { // +2 for newline and null terminator
             printf("DEBUG: Message buffer overflow detected.\n");
@@ -114,7 +277,7 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
         }
 
         strcat(message, buffer);
-        strcat(message, "\n"); // Append a newline to each line
+        strcat(message, "\n"); // Append a newline to each line 
     }
 
     printf("DEBUG: Complete message:\n%s", message); // Debug full message
@@ -139,19 +302,13 @@ void handleSendCommand(int client_socket, const char *mail_spool_dir) {
     printf("DEBUG: Sent 'OK' response to client.\n");
 }
 
+
 void handleListCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81];
+    const char *username = getSessionUsername(client_socket);
     char buffer[BUF];
     char user_inbox_path[256];
     FILE *inbox_file;
     int message_count = 0;
-
-    // Read the username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "0\n", 2, 0); // Respond with "0" for no messages
-        return;
-    }
 
     printf("DEBUG: Username for LIST: %s\n", username);
 
@@ -204,18 +361,13 @@ void handleListCommand(int client_socket, const char *mail_spool_dir) {
 }
 
 void handleReadCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81], message_number_str[10];
+    const char *username = getSessionUsername(client_socket);
+    char message_number_str[10];
     char user_inbox_path[256];
     char buffer[BUF];
     FILE *inbox_file;
     int message_number;
 
-    // 1. Read Username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "ERR\nInvalid or missing username.\n", 40, 0);
-        return;
-    }
     printf("DEBUG: Username for READ: %s\n", username);
 
     // 2. Read Message Number
@@ -311,21 +463,17 @@ void handleReadCommand(int client_socket, const char *mail_spool_dir) {
 }
 
 void handleDelCommand(int client_socket, const char *mail_spool_dir) {
-    char username[81], message_number_str[10];
+    const char *username = getSessionUsername(client_socket);
+    char message_number_str[10];
     char user_inbox_path[256];
     char buffer[BUF];
     FILE *inbox_file, *temp_file;
     int message_number;
 
-    // 1. Read Username
-    if (readline(client_socket, username, sizeof(username)) <= 0 || !isValidUsername(username)) {
-        printf("DEBUG: Invalid or missing username received.\n");
-        send(client_socket, "ERR\nInvalid or missing username.\n", 40, 0);
-        return;
-    }
     printf("DEBUG: Username for DEL: %s\n", username);
 
-    // 2. Read Message Number
+    // 1. Read Message Number
+    memset(message_number_str, 0, sizeof(message_number_str));
     if (readline(client_socket, message_number_str, sizeof(message_number_str)) <= 0 ||
         sscanf(message_number_str, "%d", &message_number) != 1 || message_number <= 0) {
         printf("DEBUG: Invalid or missing message number received.\n");
@@ -334,72 +482,87 @@ void handleDelCommand(int client_socket, const char *mail_spool_dir) {
     }
     printf("DEBUG: Message number for DEL: %d\n", message_number);
 
-    // 3. Construct Inbox Path
+    // 2. Construct Inbox Path
     snprintf(user_inbox_path, sizeof(user_inbox_path), "%s/%s_inbox.txt", mail_spool_dir, username);
-
     inbox_file = fopen(user_inbox_path, "r");
     if (!inbox_file) {
         printf("DEBUG: Inbox file not found for user %s.\n", username);
-        char error_msg[BUF];
-        snprintf(error_msg, sizeof(error_msg), "ERR\nInbox file not found for user %s.\n", username);
-        send(client_socket, error_msg, strlen(error_msg), 0);
+        send(client_socket, "ERR\nInbox file not found.\n", 28, 0);
         return;
     }
 
-    // 4. Create Temporary File
+    // 3. Count total messages
+    int total_messages = 0;
+    char line[BUF];
+    while (fgets(line, sizeof(line), inbox_file)) {
+        if (strncmp(line, "---", 3) == 0) {
+            total_messages++;
+        }
+    }
+    rewind(inbox_file);  // Set file pointer back to the beginning
+
+    // 4. Validate message number
+    if (message_number > total_messages) {
+        printf("DEBUG: Message number %d does not exist. Total messages: %d\n", message_number, total_messages);
+        send(client_socket, "ERR\nMessage number does not exist.\n", 36, 0);
+        fclose(inbox_file);
+        return;
+    }
+
+    // 5. Create Temporary File
     snprintf(buffer, sizeof(buffer), "%s/temp_inbox.txt", mail_spool_dir);
     temp_file = fopen(buffer, "w");
     if (!temp_file) {
         perror("DEBUG: Failed to create temp file");
         fclose(inbox_file);
-        send(client_socket, "ERR\nFailed to create temporary file.\n", 40, 0);
+        send(client_socket, "ERR\nFailed to create temporary file.\n", 38, 0);
         return;
     }
 
-    // 5. Locate and Remove the Specific Message
+    // 6. Locate and Remove the Specific Message
     int current_message = 1;
     int found = 0;
-    char line[BUF];
+    int skip = 0;
 
     while (fgets(line, sizeof(line), inbox_file)) {
-        if (strncmp(line, "---", 3) == 0) { // Message boundary
+        if (strncmp(line, "---", 3) == 0) {
             current_message++;
+            skip = 0;
         }
 
         if (current_message == message_number) {
             found = 1;
-            continue; // Skip lines of the target message
+            skip = 1;  // Skip lines of the target message
+            continue;
         }
 
-        fputs(line, temp_file); // Write lines of other messages to temp file
+        if (!skip) {
+            fputs(line, temp_file);
+        }
     }
 
     fclose(inbox_file);
     fclose(temp_file);
 
+    // 7. Handle case if message was not found
     if (!found) {
         printf("DEBUG: Message number %d not found for user %s.\n", message_number, username);
-        remove(buffer); // Delete temp file
-        char error_msg[BUF];
-        snprintf(error_msg, sizeof(error_msg), "ERR\nMessage number %d not found for user %s.\n",
-                 message_number, username);
-        send(client_socket, error_msg, strlen(error_msg), 0);
+        remove(buffer);
+        send(client_socket, "ERR\nMessage number not found.\n", 32, 0);
         return;
     }
 
-    // 6. Replace Original File with Temp File
+    // 8. Replace Original File with Temp File
     if (rename(buffer, user_inbox_path) != 0) {
         perror("DEBUG: Failed to replace inbox file");
-        send(client_socket, "ERR\nFailed to update inbox file.\n", 35, 0);
+        send(client_socket, "ERR\nFailed to update inbox file.\n", 34, 0);
         return;
     }
 
     printf("DEBUG: Message number %d deleted successfully for user %s.\n", message_number, username);
-    char success_msg[BUF];
-    snprintf(success_msg, sizeof(success_msg), "OK\nMessage number %d deleted successfully for user %s.\n",
-             message_number, username);
-    send(client_socket, success_msg, strlen(success_msg), 0);
+    send(client_socket, "OK\nMessage deleted successfully.\n", 33, 0);
 }
+
 
 void *clientCommunication(void *data, const char *mail_spool_dir) {
     int client_socket = *(int *)data; // Client socket
@@ -430,7 +593,11 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
         printf("\nReceived from client: %s\n", buffer); // Print received data
         
         // Check command type (exact matching with strcmp)
-        if (strcmp(buffer, "SEND") == 0) {
+        if (strcmp(buffer, "LOGIN") == 0) {
+            // Process the LOGIN command
+            printf("Receive LOGIN command\r\n");
+            handleLdapLogin(client_socket);
+        } else if (strcmp(buffer, "SEND") == 0) {
             // Process the SEND command
             printf("Receive SEND command\r\n");
             handleSendCommand(client_socket, mail_spool_dir);
@@ -455,6 +622,8 @@ void *clientCommunication(void *data, const char *mail_spool_dir) {
             send(client_socket, "Unknown command\n", 16, 0);
         }
     }
+
+    removeSession(client_socket); //Remove the session
 
     close(client_socket); // Close client socket
     return NULL;
