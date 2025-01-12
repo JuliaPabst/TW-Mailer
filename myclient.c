@@ -327,7 +327,6 @@ void handleDelCommand(int create_socket) {
     } else {
         perror("recv error");
     }
-    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 int main(int argc, char **argv) {

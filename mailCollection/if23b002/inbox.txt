@@ -1,41 +1,5 @@
----
-From: if23b002
-To: if23b002
-Subject: Krawallo
-Hallo
-
-Attachment: attach2.bmp
-From: if23b002
-To: if23b002
-Subject: adasdadsa
-asdasd
-
----
-From: if23b002
-To: if23b002
-Subject: kkkk
-adasd
-
----
-From: if23b002
-To: if23b002
-Subject: Hiho
-Hallo
-
 From: if23b002
 To: if23b002
 Subject: 1
 1
 
-From: if23b002
-To: if23b002
-Subject: gagaga
-mm
-
-From: if23b002
-To: if23b002
-Subject: Yvonne
-aaa
-
-Attachment: attach2.bmp
----
