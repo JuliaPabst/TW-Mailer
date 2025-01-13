@@ -11,11 +11,11 @@ typedef struct {
     char username[USERNAME_MAX_LENGTH];
 } Session;
 
-// Array zur Speicherung von Sessions
+// container to save sessions
 extern Session sessions[MAX_CLIENTS];
 extern pthread_mutex_t sessions_lock;
 
-// Funktionen zur Verwaltung von Sessions
+// functions to deal with sessions
 void addSession(int client_socket, const char *username);
 const char *getSessionUsername(int client_socket);
 void removeSession(int client_socket);

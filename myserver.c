@@ -43,13 +43,13 @@ int main(int argc, char **argv) {
     int port;
     char *mail_spool_dir;
 
-    if (argc != 3) {
+    if(argc != 3) {
         fprintf(stderr, "Usage: %s <port> <mail-spool-directory>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     port = atoi(argv[1]);
-    if (port <= 0 || port > 65535) {
+    if(port <= 0 || port > 65535) {
         fprintf(stderr, "Invalid port number: %s\n", argv[1]);
         return EXIT_FAILURE;
     }
@@ -80,20 +80,20 @@ int main(int argc, char **argv) {
     address.sin_port = htons(port);
 
     // Bind socket to address
-    if (bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
+    if(bind(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("bind error");
         return EXIT_FAILURE;
     }
 
     // Listen for incoming connections
-    if (listen(create_socket, 5) == -1) {
+    if(listen(create_socket, 5) == -1) {
         perror("listen error");
         return EXIT_FAILURE;
     }
 
     printf("Server running on port %d, mail spool directory: %s\n", port, mail_spool_dir);
 
-    while (!abortRequested) {
+    while(!abortRequested) {
         printf("Waiting for connections...\n");
 
         addrlen = sizeof(struct sockaddr_in);

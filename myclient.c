@@ -3,7 +3,7 @@
 #define BUF 1024
 
 void sendMessage(int socket, const char *message) {
-    if (send(socket, message, strlen(message) + 1, 0) == -1) { // +1 for null terminator
+    if(send(socket, message, strlen(message) + 1, 0) == -1) { // +1 for null terminator
         perror("Error sending message");
     }
 }
@@ -20,7 +20,7 @@ char *handleLoginCommand(int create_socket) {
     int size;
 
     
-      if (username == NULL) {
+      if(username == NULL) {
         perror("Memory allocation error");
         printf("Username was NULL");
         return NULL;
@@ -31,14 +31,14 @@ char *handleLoginCommand(int create_socket) {
 
     // Prompt for username
     printf(">> LDAP Username: ");
-    if (fgets(username, 256, stdin) == NULL) {
+    if(fgets(username, 256, stdin) == NULL) {
         perror("Error reading username");
         free(username);  // Free memory on failure
         return NULL; // Login failed
     }
 
     size = strlen(username);
-    if (username[size - 1] == '\n') {
+    if(username[size - 1] == '\n') {
         username[--size] = '\0'; // Remove newline
     }
 
@@ -59,7 +59,7 @@ char *handleLoginCommand(int create_socket) {
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt); // Restore terminal attributes
     printf("\n"); // Add a newline for user feedback
 
-    if (len < 0) {
+    if(len < 0) {
     perror("Error reading password");
     free(username);  // Free memory on failure
     return NULL; // Login failed
@@ -68,7 +68,7 @@ char *handleLoginCommand(int create_socket) {
     // Null-terminate the password and strip newline
     password[len] = '\0';
     char *newline = strchr(password, '\n');
-    if (newline) {
+    if(newline) {
         *newline = '\0';
     }
 
@@ -77,10 +77,10 @@ char *handleLoginCommand(int create_socket) {
 
     // Wait for server response
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
+    if(size > 0) {
         buffer[size] = '\0';
         printf("<< %s\n", buffer); // Print server response
-        if (strstr(buffer, "OK") != NULL) {
+        if(strstr(buffer, "OK") != NULL) {
             return username;  // Login successful
         }
         return username; 
@@ -99,39 +99,39 @@ void handleSendCommand(int create_socket) {
     // Send "SEND" command to the server
     sendMessage(create_socket, "SEND");
 
-    // Collect sender, receiver, subject, and message
+    // Collect receiver, subject, and message
     const char *prompts[] = {"Receiver (max 8 chars)", "Subject (max 80 chars)", "Message"};
     int maxLengths[] = {8, 80, BUF - 1};
 
-    for (int i = 0; i < 3; i++) {
-        while (1) { // Retry loop for invalid input
+    for(int i = 0; i < 3; i++) {
+        while(1) { // Retry loop for invalid input
             memset(buffer, 0, sizeof(buffer)); // Clear the buffer
             printf(">> %s: ", prompts[i]);
-            if (fgets(buffer, BUF - 1, stdin) != NULL) {
+            if(fgets(buffer, BUF - 1, stdin) != NULL) {
                 size = strlen(buffer);
-                if (buffer[size - 1] == '\n') {
+                if(buffer[size - 1] == '\n') {
                     buffer[--size] = '\0'; // Remove newline
                 }
 
-                if (i < 2 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
+                if(i < 2 && !isValidInput(buffer, maxLengths[i])) { // Validate sender, receiver, subject
                     printf("Invalid %s! Try again.\n", prompts[i]);
                     continue; // Retry current prompt
                 }
 
-                if (i == 2) { // Multi-line input for "Message"
+                if(i == 2) { // Multi-line input for "Message"
                     // Send the first line of the message
                     sendMessage(create_socket, buffer);
 
-                    while (1) {
+                    while(1) {
                         printf(">> ");
                         memset(buffer, 0, sizeof(buffer)); // Clear buffer
-                        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+                        if(fgets(buffer, BUF - 1, stdin) != NULL) {
                             size = strlen(buffer);
-                            if (buffer[size - 1] == '\n') {
+                            if(buffer[size - 1] == '\n') {
                                 buffer[--size] = '\0';
                             }
                             sendMessage(create_socket, buffer); // Send every line, including empty ones
-                            if (strcmp(buffer, ".") == 0) { // End of message
+                            if(strcmp(buffer, ".") == 0) { // End of message
                                 break;
                             }
                         }
@@ -144,6 +144,47 @@ void handleSendCommand(int create_socket) {
             }
         }
     }
+
+    // Ask if user wants to attach files
+    printf(">> Do you want to attach a file? (y/n): ");
+    if(fgets(buffer, sizeof(buffer), stdin) != NULL) {
+        if(buffer[0] == 'y' || buffer[0] == 'Y') {
+            sendMessage(create_socket, "ATTACHMENT_START"); // Signal server to expect attachments
+
+        while(1) { // Loop for retrying invalid file paths
+            char file_path[512];
+            printf(">> Enter file name (with extension): ");
+            if(fgets(file_path, sizeof(file_path), stdin) != NULL) {
+                file_path[strcspn(file_path, "\n")] = '\0'; // Remove newline
+
+                FILE *file = fopen(file_path, "rb");
+                if(file) {
+                    char *filename = strrchr(file_path, '/');
+                    filename = filename ? filename + 1 : file_path;
+                    sendMessage(create_socket, filename); // Send filename
+
+                    char file_buffer[BUF];
+                    size_t size;
+                    while((size = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+                        send(create_socket, file_buffer, size, 0);
+                    }
+                    fclose(file);
+                    printf(">> Attachment %s sent successfully.\n", filename);
+                    sendMessage(create_socket, "ATTACHMENT_END");
+                    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
+                    break; // Exit loop after successful attachment
+                } else {
+                    printf(">> Could not open file: %s. Please try again.\n", file_path);
+                }
+            } else {
+                printf(">> Invalid input. Please try again.\n");
+            }
+        }
+    } else {
+        sendMessage(create_socket, "NO_ATTACH");
+    }
+}
+memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleListCommand(int create_socket) {
@@ -153,25 +194,28 @@ void handleListCommand(int create_socket) {
     // Send "LIST" command to the server
     sendMessage(create_socket, "LIST");
 
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
+
     // Receive response from the server
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
-        buffer[size] = '\0';    
+    if(size > 0) {
+        buffer[size] = '\0';
+        printf(">>%s\n", buffer);
 
         // Check if response indicates no messages
         char *line = strtok(buffer, "\n");
-        if (line && isdigit(line[0])) { // Check if first line is the count of messages
+        if(line && isdigit(line[0])) { // Check if first line is the count of messages
             int count = atoi(line);
             printf("<< Messages received: %d\n", count);
 
-            if (count == 0) {
+            if(count == 0) {
                 line = strtok(NULL, "\n"); // Get the next line
-                if (line) {
+                if(line) {
                     printf("<< %s\n\n", line); // Print "This user has not received any messages yet!"
                 }
             } else {
                 int counter = 1;
-                while ((line = strtok(NULL, "\n")) != NULL) {
+                while((line = strtok(NULL, "\n")) != NULL) {
                     printf("%d. %s\n", counter, line); // Print subjects of messages
                     counter++; 
                 }
@@ -183,6 +227,7 @@ void handleListCommand(int create_socket) {
     } else {
         perror("recv error");
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleReadCommand(int create_socket) {
@@ -193,14 +238,14 @@ void handleReadCommand(int create_socket) {
     sendMessage(create_socket, "READ");
 
     // Prompt for message number
-    while (1) {
+    while(1) {
         memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         printf(">> Message Number: ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+        if(fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
-            if (buffer[len - 1] == '\n') buffer[--len] = '\0';
+            if(buffer[len - 1] == '\n') buffer[--len] = '\0';
 
-            if (sscanf(buffer, "%d", &size) != 1 || size <= 0) {
+            if(sscanf(buffer, "%d", &size) != 1 || size <= 0) {
                 printf("Invalid message number! Try again.\n");
                 continue;
             }
@@ -213,24 +258,25 @@ void handleReadCommand(int create_socket) {
     // Receive the complete response
     memset(buffer, 0, sizeof(buffer)); // Clear the buffer
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
+    if(size > 0) {
         buffer[size] = '\0';
-        if (strncmp(buffer, "ERR", 3) == 0) {
+        if(strncmp(buffer, "ERR", 3) == 0) {
             char *error_msg = strchr(buffer, '\n'); // Locate the additional error message
             printf("<< ERR\n");
-            if (error_msg) {
+            if(error_msg) {
                 printf("<< %s\n", error_msg + 1); // Print additional error message
             }
-        } else if (strncmp(buffer, "OK", 2) == 0) {
+        } else if(strncmp(buffer, "OK", 2) == 0) {
             printf("<< OK\n%s\n", buffer + 3);
         } else {
             printf("%s\n", buffer);
         }
-    } else if (size == 0) {
+    } else if(size == 0) {
         printf("Server closed remote socket\n");
     } else {
         perror("recv error");
     }
+    memset(buffer, 0, sizeof(buffer)); // Clear the buffer
 }
 
 void handleDelCommand(int create_socket) {
@@ -240,14 +286,14 @@ void handleDelCommand(int create_socket) {
     sendMessage(create_socket, "DEL");
 
     // Ask and validate message number
-    while (1) {
+    while(1) {
         memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         printf(">> Message number: ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+        if(fgets(buffer, BUF - 1, stdin) != NULL) {
             size_t len = strlen(buffer);
-            if (buffer[len - 1] == '\n') buffer[--len] = '\0';
+            if(buffer[len - 1] == '\n') buffer[--len] = '\0';
 
-            if (sscanf(buffer, "%d", &size) != 1 || size <= 0) {
+            if(sscanf(buffer, "%d", &size) != 1 || size <= 0) {
                 printf("Invalid message number! Try again.\n");
                 continue;
             }
@@ -260,26 +306,26 @@ void handleDelCommand(int create_socket) {
     // Get the response from the server
     memset(buffer, 0, sizeof(buffer)); // Clear the buffer
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size > 0) {
+    if(size > 0) {
         buffer[size] = '\0'; // Terminate string
 
         // Error and success messages
-        if (strncmp(buffer, "ERR", 3) == 0) {
+        if(strncmp(buffer, "ERR", 3) == 0) {
             char *error_msg = strchr(buffer, '\n'); 
             printf("<< ERR\n");
-            if (error_msg) {
+            if(error_msg) {
                 printf("<< %s\n", error_msg + 1); 
             }
-        } else if (strncmp(buffer, "OK", 2) == 0) {
+        } else if(strncmp(buffer, "OK", 2) == 0) {
             char *success_msg = strchr(buffer, '\n'); 
             printf("<< OK\nMessage deleted successfully\n");
-            if (success_msg) {
+            if(success_msg) {
                 printf("<< %s\n", success_msg + 1); 
             }
         } else {
             printf("<< %s\n", buffer); 
         }
-    } else if (size == 0) {
+    } else if(size == 0) {
         printf("Server closed remote socket\n");
     } else {
         perror("recv error");
@@ -296,7 +342,7 @@ int main(int argc, char **argv) {
 
     ////////////////////////////////////////////////////////////////////////////
     // Check Command-Line Arguments
-    if (argc < 3) {
+    if(argc < 3) {
         fprintf(stderr, "Usage: %s <ip> <port>\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -304,14 +350,14 @@ int main(int argc, char **argv) {
     const char *ip = argv[1];
     int port = atoi(argv[2]);
 
-    if (port <= 0 || port > 65535) {
+    if(port <= 0 || port > 65535) {
         fprintf(stderr, "Invalid port number: %d\n", port);
         return EXIT_FAILURE;
     }
 
     ////////////////////////////////////////////////////////////////////////////
     // CREATE A SOCKET
-    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    if((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("Socket error");
         return EXIT_FAILURE;
     }
@@ -322,26 +368,27 @@ int main(int argc, char **argv) {
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
 
-   if (inet_pton(AF_INET, ip, &address.sin_addr) <= 0) {
+   if(inet_pton(AF_INET, ip, &address.sin_addr) <= 0) {
     fprintf(stderr, "Invalid IP address: %s\n", ip);
     return EXIT_FAILURE;
 }
 
     ////////////////////////////////////////////////////////////////////////////
     // CREATE A CONNECTION
-    if (connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
+    if(connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("Connection error - no server available");
         return EXIT_FAILURE;
     }
 
     printf("Connection with server (%s:%d) established\n", ip, port);
+    printf("\nType HELP to see available commands.\n\n");
 
     ////////////////////////////////////////////////////////////////////////////
     // RECEIVE DATA
     size = recv(create_socket, buffer, BUF - 1, 0);
-    if (size == -1) {
+    if(size == -1) {
         perror("recv error");
-    } else if (size == 0) {
+    } else if(size == 0) {
         printf("Server closed remote socket\n");
     } else {
         buffer[size] = '\0';
@@ -350,10 +397,11 @@ int main(int argc, char **argv) {
 
     do {
         printf(">> ");
-        if (fgets(buffer, BUF - 1, stdin) != NULL) {
+        memset(buffer, 0, sizeof(buffer)); // Clear buffer 
+        if(fgets(buffer, BUF - 1, stdin) != NULL) {
             size = strlen(buffer);
 
-            if (buffer[size - 1] == '\n') {
+            if(buffer[size - 1] == '\n') {
                 buffer[size - 1] = '\0';
             }
 
@@ -364,33 +412,33 @@ int main(int argc, char **argv) {
 
             if(strcmp(buffer, "SEND") == 0 || strcmp(buffer, "LIST") == 0 || strcmp(buffer, "READ") == 0 || strcmp(buffer, "DEL") == 0 || strcmp(buffer, "LOGIN") == 0) {
                 // Handle "LOGIN" command
-                if (strcmp(buffer, "LOGIN") == 0) {
-                    if (username != NULL) {
+                if(strcmp(buffer, "LOGIN") == 0) {
+                    if(username != NULL) {
                         free(username);  // Free old username before re-login
                     }
                     username = handleLoginCommand(create_socket);
                 }
                 // Handle "SEND" command
-                if (strcmp(buffer, "SEND") == 0) {
+                if(strcmp(buffer, "SEND") == 0) {
                     handleSendCommand(create_socket);
 
                     // Receive server response
                     size = recv(create_socket, buffer, BUF - 1, 0);
-                    if (size == -1) {
+                    if(size == -1) {
                         perror("recv error");
                         break;
-                    } else if (size == 0) {
+                    } else if(size == 0) {
                         printf("Server closed remote socket\n");
                         break;
                     } else {
                         buffer[size] = '\0';
                         printf("<< %s\n", buffer);
                     }
-                } else if (strcmp(buffer, "LIST") == 0) {
+                } else if(strcmp(buffer, "LIST") == 0) {
                     handleListCommand(create_socket);
-                } else if (strcmp(buffer, "READ") == 0) {
+                } else if(strcmp(buffer, "READ") == 0) {
                     handleReadCommand(create_socket);
-                } else if (strcmp(buffer, "DEL") == 0) {
+                } else if(strcmp(buffer, "DEL") == 0) {
                     handleDelCommand(create_socket);
                 }
 
@@ -405,10 +453,10 @@ int main(int argc, char **argv) {
 
             // Receive response from the server
             size = recv(create_socket, buffer, BUF - 1, 0);
-            if (size == -1) {
+            if(size == -1) {
                 perror("recv error");
                 break;
-            } else if (size == 0) {
+            } else if(size == 0) {
                 printf("Server closed remote socket\n");
                 break;
             } else {
@@ -416,13 +464,13 @@ int main(int argc, char **argv) {
                 printf("<< %s\n", buffer);
             }
         }
-    } while (!isQuit);
+    } while(!isQuit);
 
     if(username != NULL){
         free(username);  // Free username at the end
     }
 
-    if (create_socket != -1) {
+    if(create_socket != -1) {
         shutdown(create_socket, SHUT_RDWR);
         close(create_socket);
     }

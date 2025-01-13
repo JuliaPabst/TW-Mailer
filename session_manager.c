@@ -2,13 +2,13 @@
 #include <string.h>
 #include <stdio.h>
 
-Session sessions[MAX_CLIENTS] = {0}; // Initialisiere Sessions
+Session sessions[MAX_CLIENTS] = {0}; // initialize session
 pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void addSession(int client_socket, const char *username) {
     pthread_mutex_lock(&sessions_lock);
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (sessions[i].client_socket == 0) { // Freier Slot gefunden
+        if (sessions[i].client_socket == 0) { // free slot
             sessions[i].client_socket = client_socket;
             strncpy(sessions[i].username, username, USERNAME_MAX_LENGTH - 1);
             sessions[i].username[USERNAME_MAX_LENGTH - 1] = '\0';
